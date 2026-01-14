@@ -3,39 +3,36 @@
  * 
  * Stage 1 of the AI pipeline. Analyzes code diffs and extracts
  * structured information for routing to report sections.
+ * 
+ * Uses Groq API with Llama 3 for generous rate limits (30 req/min free tier)
  */
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 const { withTimeout, getTimeoutFromEnv, TimeoutError } = require('./timeout');
 const { ANALYZER_SYSTEM_PROMPT, createAnalyzerUserPrompt } = require('../prompts/analyzerPrompt');
 
-// Initialize Gemini client
-let genAI = null;
-let model = null;
+// Model configuration
+const MODEL_NAME = 'openai/gpt-oss-120b'; // GPT-OSS 120B for superior code analysis
+
+// Initialize Groq client
+let groqClient = null;
 
 /**
- * Initialize the Gemini client
- * @throws {Error} If GEMINI_API_KEY is not set
+ * Initialize the Groq client
+ * @throws {Error} If GROQ_API_KEY is not set
  */
 function initializeClient() {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY environment variable is not set');
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error('GROQ_API_KEY environment variable is not set. Get a free key at https://console.groq.com');
   }
 
-  if (!genAI) {
-    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    model = genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-flash',
-      generationConfig: {
-        temperature: 0.3, // Lower temperature for more consistent analysis
-        topP: 0.8,
-        topK: 40,
-        maxOutputTokens: 2048
-      }
+  if (!groqClient) {
+    groqClient = new Groq({
+      apiKey: process.env.GROQ_API_KEY
     });
   }
 
-  return model;
+  return groqClient;
 }
 
 /**
@@ -150,7 +147,7 @@ async function analyze({
 
   try {
     // Initialize client if needed
-    const geminiModel = initializeClient();
+    const client = initializeClient();
 
     // Create the prompt
     const userPrompt = createAnalyzerUserPrompt({
@@ -163,28 +160,27 @@ async function analyze({
       templateSections
     });
 
-    // Call Gemini with timeout
+    // Call Groq with timeout
     const result = await withTimeout(
       (async () => {
-        const chat = geminiModel.startChat({
-          history: [
+        const chatCompletion = await client.chat.completions.create({
+          messages: [
             {
-              role: 'user',
-              parts: [{ text: 'You are a code analyzer. Respond only with valid JSON.' }]
+              role: 'system',
+              content: ANALYZER_SYSTEM_PROMPT + '\n\nRespond only with valid JSON. No markdown code fences.'
             },
             {
-              role: 'model',
-              parts: [{ text: 'Understood. I will analyze code and respond with valid JSON only.' }]
+              role: 'user',
+              content: userPrompt
             }
-          ]
+          ],
+          model: MODEL_NAME,
+          temperature: 0.3,
+          max_tokens: 2048,
+          response_format: { type: 'json_object' }
         });
 
-        const response = await chat.sendMessage([
-          { text: ANALYZER_SYSTEM_PROMPT },
-          { text: userPrompt }
-        ]);
-
-        return response.response.text();
+        return chatCompletion.choices[0]?.message?.content || '{}';
       })(),
       timeoutMs,
       'Analyzer Agent'
@@ -201,7 +197,7 @@ async function analyze({
       ...validated,
       metadata: {
         analyzedAt: new Date(),
-        model: 'gemini-1.5-flash',
+        model: MODEL_NAME,
         commitHash
       }
     };

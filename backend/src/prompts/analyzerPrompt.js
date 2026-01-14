@@ -66,7 +66,9 @@ Choose from these categories (pick 2-5 most relevant):
 
 ## Guidelines for Section Suggestions:
 Based on the template sections provided, suggest 1-3 most relevant sections.
-Use the section IDs from the template.
+**IMPORTANT: Use the EXACT section IDs from the template sections list provided.**
+The section IDs are lowercase strings like "introduction", "purpose", "scope", "features", etc.
+Do NOT invent new section IDs - only use IDs that appear in the Available Report Sections.
 Provide confidence scores between 0 and 1.`;
 
 /**

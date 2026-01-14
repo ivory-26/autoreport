@@ -26,6 +26,18 @@ const {
 router.post('/github', handleGitHubWebhook);
 
 /**
+ * GET /webhooks/github
+ * Simple info endpoint for testing connectivity
+ */
+router.get('/github', (req, res) => {
+  res.json({
+    message: 'GitHub webhook endpoint is active',
+    method: 'Use POST to send webhook events',
+    timestamp: new Date()
+  });
+});
+
+/**
  * GET /webhooks/status
  * Returns the current queue status
  * Useful for monitoring and debugging

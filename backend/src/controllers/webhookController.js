@@ -184,6 +184,10 @@ async function processWebhookJob(job) {
     }
 
     // Stage 1: Analyze the diff
+    console.log('[Pipeline] Starting analysis for commit:', commit.hash?.substring(0, 7));
+    console.log('[Pipeline] Diff length:', diff?.length || 0, 'chars');
+    console.log('[Pipeline] Files changed:', summary?.relevantFiles?.length || 0);
+    
     const analysisResult = await analyze({
       commitHash: commit.hash,
       commitMessage: commit.message,
@@ -197,10 +201,19 @@ async function processWebhookJob(job) {
       templateSections: template.sections
     });
 
+    console.log('[Pipeline] Analysis result:', JSON.stringify({
+      success: analysisResult.success,
+      changeType: analysisResult.changeType,
+      suggestedSections: analysisResult.suggestedSections?.length || 0,
+      error: analysisResult.error
+    }));
+
     pipelineTrace.analysisCompleted = new Date();
     pipelineTrace.writingStarted = new Date();
 
     // Stage 2: Generate content for relevant sections
+    console.log('[Pipeline] Starting writer for sections...');
+    
     const writerResults = await generateForAllSections({
       analysisResult,
       templateSections: template.sections,
@@ -215,6 +228,13 @@ async function processWebhookJob(job) {
         author: commit.author
       }
     });
+
+    console.log('[Pipeline] Writer results:', writerResults.map(r => ({
+      sectionId: r.sectionId,
+      success: r.success,
+      contentLength: r.content?.length || 0,
+      error: r.error
+    })));
 
     pipelineTrace.writingCompleted = new Date();
 

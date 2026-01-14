@@ -3,39 +3,36 @@
  * 
  * Stage 2 of the AI pipeline. Generates academic-style prose
  * for report sections based on analysis results.
+ * 
+ * Uses Groq API with Llama 3 for generous rate limits (30 req/min free tier)
  */
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 const { withTimeout, getTimeoutFromEnv, TimeoutError } = require('./timeout');
 const { WRITER_SYSTEM_PROMPT, createWriterUserPrompt, createSectionIntroPrompt } = require('../prompts/writerPrompt');
 
-// Initialize Gemini client
-let genAI = null;
-let model = null;
+// Model configuration  
+const MODEL_NAME = 'qwen/qwen3-32b'; // Qwen3-32B for creative technical writing
+
+// Initialize Groq client
+let groqClient = null;
 
 /**
- * Initialize the Gemini client
- * @throws {Error} If GEMINI_API_KEY is not set
+ * Initialize the Groq client
+ * @throws {Error} If GROQ_API_KEY is not set
  */
 function initializeClient() {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY environment variable is not set');
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error('GROQ_API_KEY environment variable is not set. Get a free key at https://console.groq.com');
   }
 
-  if (!genAI) {
-    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    model = genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-flash',
-      generationConfig: {
-        temperature: 0.7, // Slightly higher for more varied writing
-        topP: 0.9,
-        topK: 40,
-        maxOutputTokens: 4096
-      }
+  if (!groqClient) {
+    groqClient = new Groq({
+      apiKey: process.env.GROQ_API_KEY
     });
   }
 
-  return model;
+  return groqClient;
 }
 
 /**
@@ -136,7 +133,7 @@ async function generate({
   const timeoutMs = getTimeoutFromEnv(30000);
 
   try {
-    const geminiModel = initializeClient();
+    const client = initializeClient();
 
     // Create the prompt
     const userPrompt = createWriterUserPrompt({
@@ -146,28 +143,27 @@ async function generate({
       commitInfo
     });
 
-    // Call Gemini with timeout
+    // Call Groq with timeout
     const result = await withTimeout(
       (async () => {
-        const chat = geminiModel.startChat({
-          history: [
+        const chatCompletion = await client.chat.completions.create({
+          messages: [
             {
-              role: 'user',
-              parts: [{ text: 'You are a technical writer. Respond only with valid JSON.' }]
+              role: 'system',
+              content: WRITER_SYSTEM_PROMPT + '\n\nRespond only with valid JSON. No markdown code fences.'
             },
             {
-              role: 'model',
-              parts: [{ text: 'Understood. I will generate content and respond with valid JSON only.' }]
+              role: 'user',
+              content: userPrompt
             }
-          ]
+          ],
+          model: MODEL_NAME,
+          temperature: 0.7,
+          max_tokens: 4096,
+          response_format: { type: 'json_object' }
         });
 
-        const response = await chat.sendMessage([
-          { text: WRITER_SYSTEM_PROMPT },
-          { text: userPrompt }
-        ]);
-
-        return response.response.text();
+        return chatCompletion.choices[0]?.message?.content || '{}';
       })(),
       timeoutMs,
       'Writer Agent'
@@ -184,7 +180,7 @@ async function generate({
       ...validated,
       metadata: {
         generatedAt: new Date(),
-        model: 'gemini-1.5-flash',
+        model: MODEL_NAME,
         sourceCommit: commitInfo.hash
       }
     };
@@ -232,14 +228,29 @@ async function generateSectionIntro(section, projectMetadata) {
   const timeoutMs = getTimeoutFromEnv(15000); // Shorter timeout for intros
 
   try {
-    const geminiModel = initializeClient();
+    const client = initializeClient();
 
     const prompt = createSectionIntroPrompt(section, projectMetadata);
 
     const result = await withTimeout(
       (async () => {
-        const response = await geminiModel.generateContent(prompt);
-        return response.response.text();
+        const chatCompletion = await client.chat.completions.create({
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a technical writer. Generate a brief, professional introduction paragraph.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          model: MODEL_NAME,
+          temperature: 0.6,
+          max_tokens: 500
+        });
+
+        return chatCompletion.choices[0]?.message?.content || '';
       })(),
       timeoutMs,
       'Section Intro Generator'
@@ -352,16 +363,34 @@ async function generateForAllSections({
   // Get suggested sections (up to 3)
   const sectionsToUpdate = [];
   
+  console.log('[Writer] Template sections available:', templateSections.map(s => s.id));
+  console.log('[Writer] Analyzer suggested sections:', analysisResult.suggestedSections?.map(s => s.sectionId));
+  
   if (analysisResult.suggestedSections && analysisResult.suggestedSections.length > 0) {
     for (const suggestion of analysisResult.suggestedSections.slice(0, 3)) {
-      const templateSection = templateSections.find(s => s.id === suggestion.sectionId);
+      // Try exact match first, then partial match
+      let templateSection = templateSections.find(s => s.id === suggestion.sectionId);
+      
+      // If no exact match, try partial match (analyzer might return 'feature' instead of 'features')
+      if (!templateSection && suggestion.sectionId) {
+        templateSection = templateSections.find(s => 
+          s.id.toLowerCase().includes(suggestion.sectionId.toLowerCase()) ||
+          suggestion.sectionId.toLowerCase().includes(s.id.toLowerCase())
+        );
+      }
+      
       if (templateSection) {
         const existingSection = report.sections.find(s => s.templateSectionId === templateSection.id);
         sectionsToUpdate.push({
           ...templateSection,
+          id: templateSection.id, // Ensure id is preserved
+          title: templateSection.title, // Ensure title is preserved
           existingContent: existingSection?.content || '',
           confidence: suggestion.confidence
         });
+        console.log(`[Writer] Matched section: ${suggestion.sectionId} -> ${templateSection.id}`);
+      } else {
+        console.log(`[Writer] No match found for suggested section: ${suggestion.sectionId}`);
       }
     }
   }
@@ -373,14 +402,22 @@ async function generateForAllSections({
       const existingSection = report.sections.find(s => s.templateSectionId === match.section.id);
       sectionsToUpdate.push({
         ...match.section,
+        id: match.section.id, // Ensure id is preserved
+        title: match.section.title, // Ensure title is preserved
         existingContent: existingSection?.content || '',
         confidence: match.confidence
       });
+      console.log(`[Writer] Fallback section selected: ${match.section.id}`);
     }
   }
 
   // Generate content for each section
   for (const targetSection of sectionsToUpdate) {
+    if (!targetSection.id || !targetSection.title) {
+      console.error('[Writer] Invalid section - missing id or title:', targetSection);
+      continue;
+    }
+    
     const result = await generate({
       analysisResult,
       targetSection,
