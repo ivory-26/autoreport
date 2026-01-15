@@ -1,9 +1,9 @@
 # **Product Requirements Document (PRD)**
 
 Project Name: AutoReport  
-Version: 3.1 (Structure Update)  
+Version: 3.2 (Collaboration Update)  
 Status: Approved for Development  
-Last Updated: 2026-01-14  
+Last Updated: 2026-01-15  
 Author: Alpha
 
 ## **1\. Executive Summary**
@@ -18,6 +18,7 @@ Unlike collaborative editors that require manual input, AutoReport listens to Gi
 | :---- | :---- | :---- |
 | **The Coder (Student)** | Wants to code, not write. | "I want the report to just *exist* when I'm done coding." |
 | **The Reviewer** | Checks the report periodically. | "I want to see the report growing daily without nagging the team to write it." |
+| **The Collaborator** | Team member invited to view/edit reports. | "I want to access shared project reports without managing webhooks." |
 
 ## **3\. Core Features & Functional Requirements**
 
@@ -28,7 +29,23 @@ Unlike collaborative editors that require manual input, AutoReport listens to Gi
 * **FR-03 (Template Engine):** Users must select a **Report Template** (e.g., "IEEE Standard", "Agile Log", "Custom").  
   * *Refined:* The system automatically generates a **Table of Contents (ToC)** from the template. The AI uses this ToC to decide where to place new content. Manual mapping is no longer required.
 
-### **3.2 The "Auto-Write" Pipeline (USP)**
+### **3.2 Team Collaboration**
+
+* **FR-03.1 (Invitation System):** Project owners can invite team members by GitHub username.
+  * Invitations are sent with a role (Viewer, Editor, Admin).
+  * Invitees receive a pending invitation banner on their dashboard.
+  * Invitations expire after 7 days if not accepted.
+* **FR-03.2 (Collaborator Access):** Collaborators can:
+  * View all project reports they are invited to.
+  * Edit reports based on their assigned role.
+  * See shared projects in a "Shared with You" section on the dashboard.
+* **FR-03.3 (Collaborator Management):** Project owners can:
+  * View all collaborators on a project.
+  * Remove collaborators at any time.
+  * The project owner retains full control over webhook configuration.
+* **FR-03.4 (Webhook Ownership):** Only the repository owner (who has admin access) can create webhooks. Team members who are repository collaborators should be invited to the AutoReport project rather than creating their own projects for the same repo.
+
+### **3.3 The "Auto-Write" Pipeline (USP)**
 
 * **FR-04 (Ingest):** Webhook receives push events.  
 * **FR-05 (Smart Filtering):** System ignores noise (assets, lockfiles) to prevent report clutter.  
@@ -36,14 +53,14 @@ Unlike collaborative editors that require manual input, AutoReport listens to Gi
 * **FR-07 (Semantic Routing & Injection):** The system passes the **Code Diff** and the **Report Structure** to the LLM. The LLM determines the most relevant section ID.  
   * *Example:* The LLM detects a change in jwt\_utils.js. It sees sections "3. Backend" and "6. Security". It intelligently routes the update to "Section 6\. Security".
 
-### **3.3 The Editor & History**
+### **3.4 The Editor & History**
 
 * **FR-08 (Live Viewer):** A read-write interface displaying the generated report (Next.js).  
 * **FR-09 (Change Highlighting):** Newly added AI text should be highlighted (e.g., in green) until viewed/dismissed.  
 * **FR-10 (Regeneration):** Users can select a specific AI-generated paragraph and click "Regenerate" to rewrite it.  
 * **FR-11 (Audit Log):** A history log showing "AutoReport added 3 paragraphs to Methodology at 10:00 AM".
 
-### **3.4 Export**
+### **3.5 Export**
 
 * **FR-12:** Export to **PDF** and **Markdown**.
 
@@ -77,17 +94,48 @@ Unlike collaborative editors that require manual input, AutoReport listens to Gi
 
 ### **5.1 Collection: Projects**
 
-Includes the template configuration.
+Includes the template configuration and collaboration settings.
 
 {  
   \_id: ObjectId,  
   repoUrl: String,  
   owner: ObjectId,  
+  ownerUsername: String, // GitHub username of project creator  
   activeTemplateId: String, // e.g., "IEEE\_V1"  
+  collaborators: \[  
+    {  
+      userId: String,  
+      username: String, // GitHub username  
+      email: String,  
+      role: String, // "viewer" | "editor" | "admin"  
+      addedAt: Date  
+    }  
+  \],  
   createdAt: Date  
 }
 
-### **5.2 Collection: Reports**
+### **5.2 Collection: Invitations**
+
+Pending collaboration invitations.
+
+{  
+  \_id: ObjectId,  
+  projectId: ObjectId,  
+  projectName: String,  
+  invitedBy: {  
+    userId: String,  
+    username: String  
+  },  
+  inviteeUsername: String, // GitHub username of invitee  
+  role: String, // "viewer" | "editor" | "admin"  
+  message: String, // Optional personal message  
+  status: String, // "pending" | "accepted" | "declined" | "expired"  
+  expiresAt: Date, // Default: 7 days from creation  
+  respondedAt: Date,  
+  createdAt: Date  
+}
+
+### **5.3 Collection: Reports**
 
 The live document.
 
@@ -105,7 +153,7 @@ The live document.
   \]  
 }
 
-### **5.3 Collection: AutoLogs (Audit Trail)**
+### **5.4 Collection: AutoLogs (Audit Trail)**
 
 {  
   \_id: ObjectId,  

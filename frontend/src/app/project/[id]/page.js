@@ -6,6 +6,7 @@ import dbConnect from '@/lib/db';
 import { Report, Project, AutoLog } from '@/lib/models';
 import { ReportViewer } from '@/components/ReportViewer';
 import { AuditLog } from '@/components/AuditLog';
+import { CollaboratorsList } from '@/components/CollaboratorsList';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -69,6 +70,8 @@ export default async function ProjectPage({ params }) {
   }
 
   const { report, project, logs } = data;
+  const username = session.user?.name;
+  const isOwner = project?.ownerUsername?.toLowerCase() === username?.toLowerCase();
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 space-y-8">
@@ -163,6 +166,13 @@ export default async function ProjectPage({ params }) {
               )}
             </CardContent>
           </Card>
+
+          {/* Collaborators Card */}
+          <CollaboratorsList 
+            projectId={project?._id}
+            projectName={project?.name}
+            isOwner={isOwner}
+          />
 
           {/* Audit Log Card */}
           <Card>

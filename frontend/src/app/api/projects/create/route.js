@@ -130,7 +130,8 @@ export async function POST(request) {
       name,
       repoUrl,
       repoFullName,
-      owner: session.user?.id || null,
+      owner: session.user?.id || null, // Note: This might need adjustment if using Users collection
+      ownerUsername: session.user?.githubUsername, // Save GitHub username
       activeTemplateId: templateId,
       webhookSecret,
       settings: {
@@ -229,6 +230,19 @@ export async function POST(request) {
             webhookSetup = { 
               success: true, 
               message: 'Webhook already exists' 
+            };
+          } else if (webhookResponse.status === 404) {
+            // 404 usually means the user doesn't have admin access to the repo
+            webhookSetup = { 
+              success: false, 
+              message: 'Admin access required. You need admin permissions on this repository to create webhooks automatically. Ask the repository owner to add you as an admin, or set up the webhook manually.',
+              requiresManualSetup: true
+            };
+          } else if (webhookResponse.status === 403) {
+            webhookSetup = { 
+              success: false, 
+              message: 'Permission denied. Your GitHub account doesn\'t have permission to create webhooks on this repository.',
+              requiresManualSetup: true
             };
           } else {
             webhookSetup = { 

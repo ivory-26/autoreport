@@ -1,27 +1,49 @@
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import { Project, Report } from '@/lib/models';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { ProjectCard } from '@/components/ProjectCard';
 import { NewProjectButton } from '@/components/NewProjectButton';
 import { EmptyProjectsState } from '@/components/EmptyProjectsState';
-import { 
-  FileText, 
-  Plus
-} from 'lucide-react';
+import { DashboardTabs } from '@/components/DashboardTabs';
 
-async function getProjects() {
+/**
+ * Get projects owned by the current user
+ */
+async function getOwnedProjects(username) {
   await dbConnect();
   
-  const projects = await Project.find({ status: 'active' })
+  const projects = await Project.find({ 
+    status: 'active',
+    ownerUsername: { $regex: new RegExp(`^${username}$`, 'i') }
+  })
     .sort({ updatedAt: -1 })
     .lean();
 
+  return enrichProjectsWithReports(projects);
+}
+
+/**
+ * Get projects where the user is a collaborator
+ */
+async function getSharedProjects(username) {
+  await dbConnect();
+  
+  const projects = await Project.find({ 
+    status: 'active',
+    'collaborators.username': { $regex: new RegExp(`^${username}$`, 'i') }
+  })
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  return enrichProjectsWithReports(projects, true);
+}
+
+/**
+ * Enrich projects with their report data
+ */
+async function enrichProjectsWithReports(projects, isShared = false) {
   const projectsWithReports = await Promise.all(
     projects.map(async (project) => {
       const report = await Report.findOne({ projectId: project._id })
@@ -31,6 +53,7 @@ async function getProjects() {
       return {
         ...project,
         _id: project._id.toString(),
+        isShared,
         report: report ? {
           ...report,
           _id: report._id?.toString() || '',
@@ -76,10 +99,19 @@ export default async function DashboardPage() {
     redirect('/api/auth/signin');
   }
 
-  const projects = await getProjects();
+  // Use (preferred) githubUsername or fallback to name
+  const username = session.user?.githubUsername || session.user?.name;
+  const [ownedProjects, sharedProjects] = await Promise.all([
+    getOwnedProjects(username),
+    getSharedProjects(username)
+  ]);
+
+  const allProjects = [...ownedProjects, ...sharedProjects].sort((a, b) => {
+    return new Date(b.updatedAt) - new Date(a.updatedAt);
+  });
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 space-y-8">
+    <div className="mx-auto max-w-7xl px-4 py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -91,21 +123,25 @@ export default async function DashboardPage() {
         <NewProjectButton />
       </div>
 
-      {/* Projects Grid */}
-      {projects.length === 0 ? (
-        <EmptyProjectsState />
-      ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
-            <ProjectCard 
+      {/* Tabs: Projects | Invitations */}
+      <DashboardTabs>
+        {/* Projects Grid */}
+        {allProjects.length === 0 ? (
+          <EmptyProjectsState />
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {allProjects.map((project) => (
+              <ProjectCard 
                 key={project._id} 
                 project={project} 
                 statusColor={getStatusColor(project.report?.status)}
                 formattedDate={formatDate(project.report?.updatedAt)}
-            />
-          ))}
-        </div>
-      )}
+                isShared={project.isShared}
+              />
+            ))}
+          </div>
+        )}
+      </DashboardTabs>
     </div>
   );
 }

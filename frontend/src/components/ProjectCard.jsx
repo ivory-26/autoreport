@@ -24,10 +24,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { FileText, GitBranch, Clock, ArrowRight, ExternalLink, MoreVertical, Trash2, Loader2 } from 'lucide-react';
+import { FileText, GitBranch, Clock, ArrowRight, ExternalLink, MoreVertical, Trash2, Loader2, Users } from 'lucide-react';
 import Link from 'next/link';
 
-export function ProjectCard({ project, statusColor, formattedDate }) {
+export function ProjectCard({ project, statusColor, formattedDate, isShared = false }) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -64,13 +64,21 @@ export function ProjectCard({ project, statusColor, formattedDate }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
-      <Card className="h-full flex flex-col overflow-hidden rounded-3xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-xl dark:bg-zinc-900/50">
+      <Card className={`h-full flex flex-col overflow-hidden rounded-3xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-xl dark:bg-zinc-900/50 ${isShared ? 'border-blue-200 dark:border-blue-800' : ''}`}>
         <CardHeader className="pb-4">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1.5 overflow-hidden flex-1">
-              <CardTitle className="text-xl font-bold truncate leading-none tracking-tight">
-                {project.name}
-              </CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-xl font-bold truncate leading-none tracking-tight">
+                  {project.name}
+                </CardTitle>
+                {isShared && (
+                  <Badge variant="outline" className="text-xs gap-1 text-blue-600 border-blue-300">
+                    <Users className="h-3 w-3" />
+                    Shared
+                  </Badge>
+                )}
+              </div>
               <CardDescription className="flex items-center gap-1.5 text-xs font-mono">
                 <GitBranch className="h-3 w-3" />
                 <span className="truncate">{project.repoFullName}</span>

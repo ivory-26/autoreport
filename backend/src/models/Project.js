@@ -46,7 +46,35 @@ const projectSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'paused', 'archived'],
     default: 'active'
-  }
+  },
+  // Owner's GitHub username (for display)
+  ownerUsername: {
+    type: String,
+    required: false
+  },
+  // Collaborators who can view/edit the project
+  collaborators: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    username: {
+      type: String,
+      required: true
+    },
+    email: {
+      type: String
+    },
+    role: {
+      type: String,
+      enum: ['viewer', 'editor', 'admin'],
+      default: 'editor'
+    },
+    addedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }]
 }, {
   timestamps: true
 });
