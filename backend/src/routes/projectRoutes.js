@@ -32,6 +32,9 @@ router.post('/:projectId/webhook', setupWebhook);
 // Generate initial report based on last commit
 router.post('/:projectId/generate-initial', generateInitialReport);
 
+// Accept all sections with AI changes (must come before :sectionId routes)
+router.post('/:projectId/sections/accept-all', acceptAllSections);
+
 // Regenerate a specific section's content using AI
 router.post('/:projectId/sections/:sectionId/regenerate', regenerateSection);
 
@@ -40,9 +43,6 @@ router.post('/:projectId/sections/:sectionId/revert', revertSection);
 
 // Accept a section's content (remove AI highlight but keep content revertable)
 router.post('/:projectId/sections/:sectionId/accept', acceptSection);
-
-// Accept all sections with AI changes
-router.post('/:projectId/sections/accept-all', acceptAllSections);
 
 // Get project by ID
 router.get('/:projectId', getProjectById);

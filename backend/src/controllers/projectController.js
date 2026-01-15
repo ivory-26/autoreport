@@ -297,7 +297,9 @@ async function setupWebhook(req, res) {
     }
 
     // Create webhook via GitHub API
-    const webhookUrl = `${process.env.BACKEND_URL || 'https://your-backend.onrender.com'}/webhooks/github`;
+    // Remove trailing slash from BACKEND_URL to prevent double-slash issues
+    const backendUrl = (process.env.BACKEND_URL || 'https://your-backend.onrender.com').replace(/\/$/, '');
+    const webhookUrl = `${backendUrl}/webhooks/github`;
     
     const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/hooks`, {
       method: 'POST',
