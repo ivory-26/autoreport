@@ -35,7 +35,7 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
   const handleDelete = async () => {
     try {
       setIsDeleting(true);
-      
+
       const response = await fetch(`/api/projects/${project._id}`, {
         method: 'DELETE',
       });
@@ -90,7 +90,7 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
                   {project.report.status}
                 </Badge>
               )}
-              
+
               {/* More Options Menu */}
               <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
                 <DropdownMenu>
@@ -101,12 +101,19 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem asChild>
-                      <Link href={`/project/${project._id}`} className="cursor-pointer">
+                    {project.report ? (
+                      <DropdownMenuItem asChild>
+                        <Link href={`/project/${project.report._id}`} className="cursor-pointer">
+                          <FileText className="mr-2 h-4 w-4" />
+                          View Report
+                        </Link>
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem disabled>
                         <FileText className="mr-2 h-4 w-4" />
                         View Report
-                      </Link>
-                    </DropdownMenuItem>
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem asChild>
                       <Link href={project.repoUrl || '#'} target="_blank" className="cursor-pointer">
                         <ExternalLink className="mr-2 h-4 w-4" />
@@ -127,8 +134,8 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete Project</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Are you sure you want to delete <strong>&quot;{project.name}&quot;</strong>? 
-                      This will permanently remove the project and all associated reports. 
+                      Are you sure you want to delete <strong>&quot;{project.name}&quot;</strong>?
+                      This will permanently remove the project and all associated reports.
                       This action cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
@@ -157,7 +164,7 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
             </div>
           </div>
         </CardHeader>
-        
+
         <CardContent className="flex flex-1 flex-col gap-4">
           {project.report ? (
             <div className="flex-1 space-y-3 rounded-2xl bg-secondary/30 p-4 border border-secondary/50">
@@ -167,14 +174,14 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
                   Report Summary
                 </span>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                 <div className="flex flex-col gap-0.5">
                   <span className="opacity-70">Last Updated</span>
                   <span className="font-medium text-foreground">{formattedDate}</span>
                 </div>
                 {project.report.metadata?.totalWordCount > 0 && (
-                   <div className="flex flex-col gap-0.5">
+                  <div className="flex flex-col gap-0.5">
                     <span className="opacity-70">Word Count</span>
                     <span className="font-medium text-foreground">{project.report.metadata.totalWordCount.toLocaleString()}</span>
                   </div>
@@ -183,21 +190,27 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-4 text-center rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
-                <p className="text-xs text-muted-foreground mb-2">No report active</p>
-                <Badge variant="outline" className="text-[10px] h-5">Draft Mode</Badge>
+              <p className="text-xs text-muted-foreground mb-2">No report active</p>
+              <Badge variant="outline" className="text-[10px] h-5">Draft Mode</Badge>
             </div>
           )}
 
           <div className="flex items-center gap-2 mt-auto pt-2">
-            <Button asChild className="flex-1 h-10 rounded-xl shadow-md transition-all hover:shadow-lg active:scale-95" size="sm">
-              <Link href={`/project/${project._id}`}>
-                View Report <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-             <Button asChild variant="outline" size="icon" className="h-10 w-10 rounded-xl border-dashed hover:border-solid hover:bg-secondary/50">
-                <Link href={project.repoUrl || '#'} target="_blank">
-                    <ExternalLink className="h-4 w-4" />
+            {project.report ? (
+              <Button asChild className="flex-1 h-10 rounded-xl shadow-md transition-all hover:shadow-lg active:scale-95" size="sm">
+                <Link href={`/project/${project.report._id}`}>
+                  View Report <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
+              </Button>
+            ) : (
+              <Button disabled className="flex-1 h-10 rounded-xl shadow-md" size="sm">
+                View Report <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            )}
+            <Button asChild variant="outline" size="icon" className="h-10 w-10 rounded-xl border-dashed hover:border-solid hover:bg-secondary/50">
+              <Link href={project.repoUrl || '#'} target="_blank">
+                <ExternalLink className="h-4 w-4" />
+              </Link>
             </Button>
           </div>
         </CardContent>
