@@ -182,7 +182,9 @@ export async function POST(request) {
     await report.save();
 
     // Setup GitHub webhook
-    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
+    const rawBackendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
+    // Remove trailing slash to prevent double slashes in URL
+    const backendUrl = rawBackendUrl ? rawBackendUrl.replace(/\/$/, '') : null;
     const webhookUrl = `${backendUrl}/webhooks/github`;
     
     let webhookSetup = { success: false, message: 'Webhook URL not configured' };

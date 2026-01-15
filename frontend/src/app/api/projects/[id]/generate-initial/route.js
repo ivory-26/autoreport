@@ -28,15 +28,16 @@ export async function POST(request, { params }) {
       );
     }
 
-    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
+    const rawBackendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
     
-    if (!backendUrl) {
+    if (!rawBackendUrl) {
       return NextResponse.json(
         { error: 'Backend URL not configured' },
         { status: 500 }
       );
     }
-
+    // Remove trailing slash to prevent double slashes in URL
+    const backendUrl = rawBackendUrl.replace(/\/$/, '');
     console.log(`[GenerateInitial] Calling backend for project ${projectId}`);
 
     // Call the backend to generate the initial report
