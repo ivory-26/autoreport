@@ -122,7 +122,7 @@ export default async function ProjectPage({ params }) {
         <div className="lg:col-span-3">
           <Card>
             <CardContent className="pt-6">
-              <ReportViewer report={report} />
+              <ReportViewer report={report} repoUrl={project?.repoUrl} />
             </CardContent>
           </Card>
         </div>
@@ -183,7 +183,7 @@ export default async function ProjectPage({ params }) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <AuditLog logs={logs} />
+              <AuditLog logs={logs} repoUrl={project?.repoUrl} />
             </CardContent>
           </Card>
         </div>
