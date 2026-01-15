@@ -6,7 +6,7 @@ import { AlertCircle, ArrowLeft, RefreshCw } from 'lucide-react';
 
 export default function Error({ error, reset }) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+    <div className="container py-6 flex flex-col items-center justify-center min-h-[60vh] text-center">
       <AlertCircle className="h-16 w-16 text-destructive mb-4" />
       <h1 className="text-2xl font-bold mb-2">Something went wrong</h1>
       <p className="text-muted-foreground mb-6 max-w-md">

@@ -71,28 +71,30 @@ export default async function ProjectPage({ params }) {
   const { report, project, logs } = data;
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-6xl px-4 py-8 space-y-8">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+        <div className="space-y-2">
           <div className="flex items-center gap-3">
             <Link href="/dashboard">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <ArrowLeft className="h-4 w-4" />
+              <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-full">
+                <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <h1 className="text-2xl font-bold">{project?.name || 'Project'}</h1>
-            <Badge variant="outline">{report.status}</Badge>
+            <h1 className="text-3xl font-bold tracking-tight">{project?.name || 'Project'}</h1>
+            <Badge variant="outline" className="text-sm px-3 py-1 shadow-sm border-primary/20 bg-primary/5 text-primary">
+              {report.status}
+            </Badge>
           </div>
           {project && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground ml-11">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground ml-12">
               <GitBranch className="h-4 w-4" />
-              <span>{project.repoFullName}</span>
+              <span className="font-mono">{project.repoFullName}</span>
               <a 
                 href={project.repoUrl} 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="hover:text-foreground"
+                className="hover:text-primary transition-colors p-1 rounded hover:bg-secondary"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
@@ -100,11 +102,11 @@ export default async function ProjectPage({ params }) {
           )}
         </div>
 
-        <div className="flex gap-2">
-          <Button variant="outline" disabled className="gap-2">
+        <div className="flex gap-3 ml-12 md:ml-0">
+          <Button variant="outline" disabled className="gap-2 shadow-sm">
             <Download className="h-4 w-4" />
-            Export PDF
-            <Badge variant="secondary" className="text-xs">Soon</Badge>
+            <span className="hidden sm:inline">Export PDF</span>
+            <Badge variant="secondary" className="text-[10px] px-1 h-4 min-w-0">Soon</Badge>
           </Button>
         </div>
       </div>

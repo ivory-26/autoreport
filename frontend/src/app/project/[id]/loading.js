@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
 export default function Loading() {
   return (
-    <div className="space-y-6">
+    <div className="container py-6 space-y-6">
       {/* Header Skeleton */}
       <div className="flex items-start justify-between">
         <div className="space-y-2">

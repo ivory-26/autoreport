@@ -4,7 +4,7 @@ import { FileQuestion, ArrowLeft } from 'lucide-react';
 
 export default function NotFound() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+    <div className="container py-6 flex flex-col items-center justify-center min-h-[60vh] text-center">
       <FileQuestion className="h-16 w-16 text-muted-foreground mb-4" />
       <h1 className="text-2xl font-bold mb-2">Report Not Found</h1>
       <p className="text-muted-foreground mb-6">

@@ -80,7 +80,7 @@ export default async function DashboardPage() {
   const projects = await getProjects();
 
   return (
-    <div className="space-y-8">
+    <div className="mx-auto max-w-6xl px-4 py-8 space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -98,7 +98,7 @@ export default async function DashboardPage() {
 
       {/* Projects Grid */}
       {projects.length === 0 ? (
-        <Card className="border-dashed">
+        <Card className="border-dashed shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             <FileText className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No projects yet</h3>
@@ -108,20 +108,20 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {projects.map((project) => (
-            <Card key={project._id} className="hover:shadow-md transition-shadow">
+            <Card key={project._id} className="hover:shadow-lg transition-all duration-300 border hover:border-primary/50 group">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
-                    <CardTitle className="text-lg">{project.name}</CardTitle>
+                    <CardTitle className="text-lg truncate max-w-[150px] group-hover:text-primary transition-colors">{project.name}</CardTitle>
                     <CardDescription className="flex items-center gap-1">
                       <GitBranch className="h-3 w-3" />
-                      {project.repoFullName}
+                      <span className="truncate max-w-[180px]">{project.repoFullName}</span>
                     </CardDescription>
                   </div>
                   {project.report && (
-                    <Badge variant={getStatusColor(project.report.status)}>
+                    <Badge variant={getStatusColor(project.report.status)} className="shadow-sm">
                       {project.report.status}
                     </Badge>
                   )}
@@ -130,29 +130,29 @@ export default async function DashboardPage() {
               <CardContent className="space-y-4">
                 {/* Report Info */}
                 {project.report ? (
-                  <div className="space-y-2 text-sm">
+                  <div className="space-y-2 text-sm bg-secondary/50 p-3 rounded-lg border border-secondary">
                     <div className="flex items-center justify-between text-muted-foreground">
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 font-medium">
                         <FileText className="h-3.5 w-3.5" />
                         {project.report.title}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-muted-foreground">
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 text-xs">
                         <Clock className="h-3.5 w-3.5" />
                         Last updated
                       </span>
-                      <span>{formatDate(project.report.updatedAt)}</span>
+                      <span className="text-xs">{formatDate(project.report.updatedAt)}</span>
                     </div>
                     {project.report.metadata?.totalWordCount > 0 && (
-                      <div className="flex items-center justify-between text-muted-foreground">
-                        <span>Word count</span>
-                        <span>{project.report.metadata.totalWordCount.toLocaleString()}</span>
+                      <div className="flex items-center justify-between text-muted-foreground pt-1 border-t border-dashed border-secondary-foreground/20">
+                        <span className="text-xs">Word count</span>
+                        <span className="text-xs font-mono">{project.report.metadata.totalWordCount.toLocaleString()}</span>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-muted-foreground italic p-3 bg-secondary/30 rounded-lg text-center">
                     No report generated yet. Push a commit to get started.
                   </p>
                 )}
@@ -161,13 +161,13 @@ export default async function DashboardPage() {
                 <div className="flex gap-2 pt-2">
                   {project.report ? (
                     <Link href={`/project/${project.report._id}`} className="flex-1">
-                      <Button variant="default" className="w-full gap-2">
+                      <Button variant="default" className="w-full gap-2 shadow-md shadow-primary/20 hover:shadow-primary/40 transition-shadow">
                         View Report
                         <ArrowRight className="h-4 w-4" />
                       </Button>
                     </Link>
                   ) : (
-                    <Button variant="secondary" className="flex-1" disabled>
+                    <Button variant="secondary" className="flex-1 opacity-50 cursor-not-allowed" disabled>
                       Waiting for commits...
                     </Button>
                   )}
@@ -176,7 +176,7 @@ export default async function DashboardPage() {
                     target="_blank" 
                     rel="noopener noreferrer"
                   >
-                    <Button variant="outline" size="icon">
+                    <Button variant="outline" size="icon" className="hover:bg-secondary shadow-sm">
                       <ExternalLink className="h-4 w-4" />
                     </Button>
                   </a>

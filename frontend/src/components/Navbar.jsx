@@ -12,7 +12,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { FileText, LayoutDashboard, LogOut, Settings, Github } from 'lucide-react';
+import { ModeToggle } from '@/components/ui/mode-toggle';
+import { LayoutDashboard, LogOut, Settings, Github } from 'lucide-react';
 
 export function Navbar() {
   const { data: session, status } = useSession();
@@ -22,39 +23,33 @@ export function Navbar() {
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 items-center">
-        {/* Logo */}
-        <Link href="/" className="flex items-center space-x-2 mr-6">
-          <FileText className="h-6 w-6 text-primary" />
-          <span className="font-bold text-xl">AutoReport</span>
-        </Link>
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
+        <div className="flex items-center gap-6">
+          {/* Logo */}
+          <Link href="/" className="flex items-center">
+            <span className="font-bold text-lg hidden sm:inline-block">AutoReport</span>
+          </Link>
 
-        {/* Navigation Links */}
-        {session && (
-          <div className="flex items-center space-x-4">
-            <Link href="/dashboard">
-              <Button
-                variant={isActive('/dashboard') ? 'secondary' : 'ghost'}
-                size="sm"
-                className="gap-2"
-              >
-                <LayoutDashboard className="h-4 w-4" />
-                Dashboard
-              </Button>
-            </Link>
-          </div>
-        )}
+          {/* Navigation Links */}
+          {session && (
+            <nav className="flex items-center space-x-4">
+              <Link href="/dashboard" className={`text-sm font-medium transition-colors hover:text-primary ${isActive('/dashboard') ? 'text-foreground' : 'text-muted-foreground'}`}>
+                 Dashboard
+              </Link>
+            </nav>
+          )}
+        </div>
 
-        {/* Spacer */}
-        <div className="flex-1" />
 
+        <div className="flex items-center gap-2">
+           <ModeToggle />
         {/* Auth Section */}
         {status === 'loading' ? (
           <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
         ) : session ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+              <Button variant="ghost" className="relative h-8 w-8 rounded-full ring-2 ring-transparent hover:ring-primary/20 transition-all">
                 <Avatar className="h-8 w-8">
                   <AvatarImage src={session.user?.image} alt={session.user?.name} />
                   <AvatarFallback>
@@ -100,11 +95,12 @@ export function Navbar() {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <Button onClick={() => signIn('github')} className="gap-2">
-            <Github className="h-4 w-4" />
-            Sign in with GitHub
-          </Button>
+            <Button onClick={() => signIn('github')} variant="default" size="sm" className="gap-2 shadow-lg shadow-primary/20">
+                <Github className="h-4 w-4" />
+                Sign In
+            </Button>
         )}
+        </div>
       </div>
     </nav>
   );
