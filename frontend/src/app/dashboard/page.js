@@ -8,6 +8,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ProjectCard } from '@/components/ProjectCard';
+import { NewProjectButton } from '@/components/NewProjectButton';
+import { EmptyProjectsState } from '@/components/EmptyProjectsState';
 import { 
   FileText, 
   Plus
@@ -86,27 +88,12 @@ export default async function DashboardPage() {
             Your projects and auto-generated reports
           </p>
         </div>
-        <Button className="gap-2 rounded-xl shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5" disabled>
-          <Plus className="h-4 w-4" />
-          New Project
-          <Badge variant="secondary" className="ml-1 text-[10px] h-5 bg-background/50 border shadow-none">Soon</Badge>
-        </Button>
+        <NewProjectButton />
       </div>
 
       {/* Projects Grid */}
       {projects.length === 0 ? (
-        <Card className="border-dashed shadow-sm rounded-3xl bg-zinc-50/50 dark:bg-zinc-900/50">
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="p-4 rounded-full bg-background shadow-sm mb-4 border">
-                <FileText className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <h3 className="text-lg font-semibold mb-2">No projects yet</h3>
-            <p className="text-muted-foreground max-w-sm mb-6">
-              Create your first project to start generating reports automatically from your Git commits.
-            </p>
-            <Button variant="outline" disabled className="rounded-xl border-dashed">Create Project</Button>
-          </CardContent>
-        </Card>
+        <EmptyProjectsState />
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {projects.map((project) => (

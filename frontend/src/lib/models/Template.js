@@ -91,6 +91,10 @@ const templateSchema = new mongoose.Schema({
   description: {
     type: String
   },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
   sections: [sectionSchema],
   metadata: {
     targetAudience: {

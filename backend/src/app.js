@@ -5,6 +5,7 @@ const morgan = require('morgan');
 
 // Import Routes
 const webhookRoutes = require('./routes/webhookRoutes');
+const projectRoutes = require('./routes/projectRoutes');
 
 // Import seed function for auto-seeding templates
 const { seedTemplates } = require('./seeds/templates');
@@ -45,6 +46,9 @@ app.get('/', (req, res) => {
 
 // Webhook routes for GitHub events
 app.use('/webhooks', webhookRoutes);
+
+// Project management routes
+app.use('/api/projects', projectRoutes);
 
 // --- Auto-seed templates on startup ---
 async function initializeApp() {

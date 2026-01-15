@@ -8,6 +8,7 @@ const defaultTemplates = [
     standard: 'IEEE-830',
     version: '1.0',
     description: 'Based on IEEE 830 standard for documenting software requirements. Ideal for academic projects and formal documentation.',
+    isActive: true,
     metadata: {
       targetAudience: 'academic',
       language: 'en'
@@ -303,6 +304,7 @@ const defaultTemplates = [
     standard: 'IEEE-1016',
     version: '1.0',
     description: 'Based on IEEE 1016 standard for software design documentation. Focus on architecture and design decisions.',
+    isActive: true,
     metadata: {
       targetAudience: 'professional',
       language: 'en'
@@ -458,6 +460,7 @@ const defaultTemplates = [
     standard: 'AGILE',
     version: '1.0',
     description: 'Lightweight template for tracking sprint progress. Perfect for agile teams and quick project updates.',
+    isActive: true,
     metadata: {
       targetAudience: 'internal',
       language: 'en'
