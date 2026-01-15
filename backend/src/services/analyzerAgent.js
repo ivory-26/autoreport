@@ -11,8 +11,12 @@ const Groq = require('groq-sdk');
 const { withTimeout, getTimeoutFromEnv, TimeoutError } = require('./timeout');
 const { ANALYZER_SYSTEM_PROMPT, createAnalyzerUserPrompt } = require('../prompts/analyzerPrompt');
 
-// Model configuration
-const MODEL_NAME = 'openai/gpt-oss-120b'; // GPT-OSS 120B for superior code analysis
+// Model configuration - primary and fallback models
+const PRIMARY_MODEL = 'openai/gpt-oss-120b';
+const FALLBACK_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+
+// Maximum tokens to use for diff (leaving room for prompt and response)
+const MAX_DIFF_TOKENS = 4000; // ~16000 chars assuming 4 chars per token
 
 // Initialize Groq client
 let groqClient = null;
@@ -145,11 +149,10 @@ async function analyze({
 }) {
   const timeoutMs = getTimeoutFromEnv(30000);
 
-  try {
-    // Initialize client if needed
+  // Helper function to call the API with a specific model
+  async function callWithModel(modelName) {
     const client = initializeClient();
 
-    // Create the prompt
     const userPrompt = createAnalyzerUserPrompt({
       commitHash,
       commitMessage,
@@ -160,28 +163,46 @@ async function analyze({
       templateSections
     });
 
-    // Call Groq with timeout
-    const result = await withTimeout(
-      (async () => {
-        const chatCompletion = await client.chat.completions.create({
-          messages: [
-            {
-              role: 'system',
-              content: ANALYZER_SYSTEM_PROMPT + '\n\nRespond only with valid JSON. No markdown code fences.'
-            },
-            {
-              role: 'user',
-              content: userPrompt
-            }
-          ],
-          model: MODEL_NAME,
-          temperature: 0.3,
-          max_tokens: 2048,
-          response_format: { type: 'json_object' }
-        });
+    const chatCompletion = await client.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: ANALYZER_SYSTEM_PROMPT + '\n\nRespond only with valid JSON. No markdown code fences.'
+        },
+        {
+          role: 'user',
+          content: userPrompt
+        }
+      ],
+      model: modelName,
+      temperature: 0.3,
+      max_tokens: 2048,
+      response_format: { type: 'json_object' }
+    });
 
-        return chatCompletion.choices[0]?.message?.content || '{}';
-      })(),
+    return chatCompletion.choices[0]?.message?.content || '{}';
+  }
+
+  // Check if error is a rate limit / token limit error
+  function isRateLimitError(error) {
+    const message = error?.message?.toLowerCase() || '';
+    const status = error?.status || error?.statusCode;
+    return (
+      status === 413 ||
+      status === 429 ||
+      message.includes('rate limit') ||
+      message.includes('token') ||
+      message.includes('too large') ||
+      message.includes('request too large')
+    );
+  }
+
+  let usedModel = PRIMARY_MODEL;
+
+  try {
+    // Try with primary model first
+    const result = await withTimeout(
+      callWithModel(PRIMARY_MODEL),
       timeoutMs,
       'Analyzer Agent'
     );
@@ -190,23 +211,59 @@ async function analyze({
     const parsed = parseAIResponse(result);
     const validated = validateAnalysisResult(parsed);
 
-    console.log(`[Analyzer] Analyzed commit ${commitHash?.substring(0, 7)}: ${validated.changeType} (${validated.impactLevel})`);
+    console.log(`[Analyzer] Analyzed commit ${commitHash?.substring(0, 7)}: ${validated.changeType} (${validated.impactLevel}) using ${PRIMARY_MODEL}`);
 
     return {
       success: true,
       ...validated,
       metadata: {
         analyzedAt: new Date(),
-        model: MODEL_NAME,
+        model: PRIMARY_MODEL,
         commitHash
       }
     };
 
-  } catch (error) {
-    console.error(`[Analyzer] Error analyzing commit ${commitHash?.substring(0, 7)}:`, error.message);
+  } catch (primaryError) {
+    // If it's a rate limit error, try fallback model
+    if (isRateLimitError(primaryError)) {
+      console.log(`[Analyzer] Rate limit hit on ${PRIMARY_MODEL}, trying fallback model ${FALLBACK_MODEL}...`);
+      usedModel = FALLBACK_MODEL;
+
+      try {
+        const result = await withTimeout(
+          callWithModel(FALLBACK_MODEL),
+          timeoutMs,
+          'Analyzer Agent (Fallback)'
+        );
+
+        const parsed = parseAIResponse(result);
+        const validated = validateAnalysisResult(parsed);
+
+        console.log(`[Analyzer] Analyzed commit ${commitHash?.substring(0, 7)}: ${validated.changeType} (${validated.impactLevel}) using fallback ${FALLBACK_MODEL}`);
+
+        return {
+          success: true,
+          ...validated,
+          metadata: {
+            analyzedAt: new Date(),
+            model: FALLBACK_MODEL,
+            usedFallback: true,
+            commitHash
+          }
+        };
+
+      } catch (fallbackError) {
+        console.error(`[Analyzer] Fallback model also failed:`, fallbackError.message);
+        // Continue to error handling below
+        throw fallbackError;
+      }
+    }
+
+    // Handle non-rate-limit errors
+    console.error(`[Analyzer] Error analyzing commit ${commitHash?.substring(0, 7)}:`, primaryError.message);
 
     // Return a minimal analysis for timeout or other errors
-    if (error instanceof TimeoutError) {
+    if (primaryError instanceof TimeoutError) {
       return {
         success: false,
         error: 'Analysis timed out',
@@ -215,7 +272,7 @@ async function analyze({
         technicalSummary: `Commit ${commitHash?.substring(0, 7)}: ${commitMessage}`,
         metadata: {
           analyzedAt: new Date(),
-          error: error.message
+          error: primaryError.message
         }
       };
     }
@@ -223,7 +280,7 @@ async function analyze({
     // For other errors, try to provide some basic analysis
     return {
       success: false,
-      error: error.message,
+      error: primaryError.message,
       errorCode: 'AI_ERROR',
       ...DEFAULT_ANALYSIS,
       // Use commit message as fallback summary
@@ -232,7 +289,7 @@ async function analyze({
       changeType: inferChangeTypeFromMessage(commitMessage),
       metadata: {
         analyzedAt: new Date(),
-        error: error.message
+        error: primaryError.message
       }
     };
   }

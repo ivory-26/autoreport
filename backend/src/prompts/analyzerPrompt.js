@@ -5,6 +5,44 @@
  * about what changed, including entities, semantic tags, and section suggestions.
  */
 
+// Maximum characters for diff (roughly 4 chars per token, targeting ~3500 tokens)
+const MAX_DIFF_CHARS = 14000;
+
+/**
+ * Truncates a diff to fit within token limits while preserving useful content
+ * @param {string} diff - The full diff content
+ * @returns {string} - Truncated diff
+ */
+function truncateDiff(diff) {
+  if (!diff || diff.length <= MAX_DIFF_CHARS) {
+    return diff || '';
+  }
+
+  // Split by file changes
+  const fileChunks = diff.split(/^diff --git/m);
+  
+  // Always include the first chunk (if it exists and isn't empty)
+  let result = '';
+  let currentLength = 0;
+  
+  for (const chunk of fileChunks) {
+    if (!chunk.trim()) continue;
+    
+    const fullChunk = chunk.startsWith(' ') ? 'diff --git' + chunk : chunk;
+    
+    if (currentLength + fullChunk.length <= MAX_DIFF_CHARS) {
+      result += (result ? '\ndiff --git' : '') + chunk;
+      currentLength += fullChunk.length;
+    } else {
+      // Add truncation notice
+      result += '\n\n[... DIFF TRUNCATED - Additional files changed but not shown due to size limits ...]';
+      break;
+    }
+  }
+  
+  return result;
+}
+
 const ANALYZER_SYSTEM_PROMPT = `You are an expert code analyzer agent. Your task is to analyze git diffs and extract structured information about code changes.
 
 ## Your Responsibilities:
@@ -58,6 +96,8 @@ Choose from these categories (pick 2-5 most relevant):
 - Testing: "test", "spec", "coverage", "quality"
 - DevOps: "config", "deployment", "docker", "ci-cd"
 - Documentation: "docs", "readme", "comments"
+
+**Note: If the diff appears truncated, analyze based on the available content and file names.**
 
 ## Guidelines for Impact Level:
 - major: Breaking changes, new major features, architectural changes
@@ -117,7 +157,7 @@ ${JSON.stringify(sectionsInfo, null, 2)}
 
 ## Git Diff
 \`\`\`diff
-${diff}
+${truncateDiff(diff)}
 \`\`\`
 
 Analyze this commit and provide the structured JSON output. Focus on extracting meaningful information that will help generate accurate report content.`;

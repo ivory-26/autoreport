@@ -9,6 +9,73 @@ const crypto = require('crypto');
 const Project = require('../models/Project');
 const Report = require('../models/Report');
 const Template = require('../models/Template');
+const { analyze } = require('../services/analyzerAgent');
+const { generateForAllSections } = require('../services/writerAgent');
+const { autoLogger } = require('../services/autoLogger');
+
+// Fallback templates for when database is empty
+const fallbackTemplates = [
+  {
+    templateId: 'IEEE_SRS_V1',
+    name: 'IEEE Software Requirements Specification',
+    standard: 'IEEE-830',
+    version: '1.0',
+    description: 'Based on IEEE 830 standard for documenting software requirements.',
+    sections: [
+      { id: 'introduction', number: '1', title: 'Introduction', level: 1, required: true },
+      { id: 'purpose', number: '1.1', title: 'Purpose', level: 2, required: true },
+      { id: 'scope', number: '1.2', title: 'Scope', level: 2, required: true },
+      { id: 'overall-description', number: '2', title: 'Overall Description', level: 1, required: true },
+      { id: 'specific-requirements', number: '3', title: 'Specific Requirements', level: 1, required: true },
+      { id: 'implementation', number: '4', title: 'Implementation Details', level: 1, required: true },
+    ]
+  },
+  {
+    templateId: 'IEEE_SDD_V1',
+    name: 'IEEE Software Design Description',
+    standard: 'IEEE-1016',
+    version: '1.0',
+    description: 'Based on IEEE 1016 standard for software design documentation.',
+    sections: [
+      { id: 'introduction', number: '1', title: 'Introduction', level: 1, required: true },
+      { id: 'design-overview', number: '2', title: 'Design Overview', level: 1, required: true },
+      { id: 'system-architecture', number: '3', title: 'System Architecture', level: 1, required: true },
+      { id: 'data-design', number: '4', title: 'Data Design', level: 1, required: true },
+    ]
+  },
+  {
+    templateId: 'AGILE_LOG_V1',
+    name: 'Agile Sprint Log',
+    standard: 'AGILE',
+    version: '1.0',
+    description: 'Lightweight template for tracking sprint progress.',
+    sections: [
+      { id: 'sprint-overview', number: '1', title: 'Sprint Overview', level: 1, required: true },
+      { id: 'completed-work', number: '2', title: 'Completed Work', level: 1, required: true },
+      { id: 'technical-notes', number: '3', title: 'Technical Notes', level: 1, required: false },
+    ]
+  }
+];
+
+/**
+ * Helper function to find a template (DB or fallback)
+ * @param {string} templateId - Template ID to find
+ * @returns {Promise<Object|null>} - Template object or null
+ */
+async function findTemplate(templateId) {
+  // Try database first
+  let template = await Template.findOne({ 
+    templateId,
+    $or: [{ isActive: true }, { isActive: { $exists: false } }]
+  });
+  
+  // If not in DB, check fallbacks
+  if (!template) {
+    template = fallbackTemplates.find(t => t.templateId === templateId);
+  }
+  
+  return template;
+}
 
 /**
  * Generate a random webhook secret
@@ -372,10 +439,276 @@ async function deleteProject(req, res) {
   }
 }
 
+/**
+ * Generate initial report based on last commit
+ * Fetches the last commit from GitHub and processes it through the AI pipeline
+ * @param {Request} req - Express request
+ * @param {Response} res - Express response
+ */
+async function generateInitialReport(req, res) {
+  const { projectId } = req.params;
+  const { accessToken, owner, repo } = req.body;
+
+  console.log(`[InitialReport] Starting for project ${projectId}`);
+
+  try {
+    if (!accessToken || !owner || !repo) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: accessToken, owner, repo'
+      });
+    }
+
+    // Find the project
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+
+    // Get the template (from DB or fallback)
+    const template = await findTemplate(project.activeTemplateId);
+    
+    if (!template) {
+      return res.status(404).json({
+        success: false,
+        error: 'Template not found'
+      });
+    }
+
+    // Find the report
+    const report = await Report.findOne({ projectId: project._id });
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        error: 'Report not found'
+      });
+    }
+
+    // Fetch the last commit from GitHub
+    console.log(`[InitialReport] Fetching last commit from ${owner}/${repo}`);
+    
+    const commitsResponse = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/commits?per_page=1`,
+      {
+        headers: {
+          'Accept': 'application/vnd.github+json',
+          'Authorization': `Bearer ${accessToken}`,
+          'X-GitHub-Api-Version': '2022-11-28'
+        }
+      }
+    );
+
+    if (!commitsResponse.ok) {
+      const errorData = await commitsResponse.json();
+      console.error('[InitialReport] Failed to fetch commits:', errorData);
+      return res.status(commitsResponse.status).json({
+        success: false,
+        error: 'Failed to fetch commits from GitHub',
+        details: errorData.message
+      });
+    }
+
+    const commits = await commitsResponse.json();
+    
+    if (!commits || commits.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'No commits found in repository'
+      });
+    }
+
+    const lastCommit = commits[0];
+    console.log(`[InitialReport] Last commit: ${lastCommit.sha.substring(0, 7)} - ${lastCommit.commit.message}`);
+
+    // Fetch the commit diff
+    const diffResponse = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/commits/${lastCommit.sha}`,
+      {
+        headers: {
+          'Accept': 'application/vnd.github.diff',
+          'Authorization': `Bearer ${accessToken}`,
+          'X-GitHub-Api-Version': '2022-11-28'
+        }
+      }
+    );
+
+    if (!diffResponse.ok) {
+      console.error('[InitialReport] Failed to fetch diff');
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch commit diff'
+      });
+    }
+
+    const diff = await diffResponse.text();
+    console.log(`[InitialReport] Diff length: ${diff.length} chars`);
+
+    // Fetch files changed in the commit
+    const commitDetailResponse = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/commits/${lastCommit.sha}`,
+      {
+        headers: {
+          'Accept': 'application/vnd.github+json',
+          'Authorization': `Bearer ${accessToken}`,
+          'X-GitHub-Api-Version': '2022-11-28'
+        }
+      }
+    );
+
+    const commitDetail = await commitDetailResponse.json();
+    const filesChanged = (commitDetail.files || []).map(f => ({
+      filename: f.filename,
+      status: f.status,
+      additions: f.additions,
+      deletions: f.deletions,
+      changes: f.changes
+    }));
+
+    console.log(`[InitialReport] Files changed: ${filesChanged.length}`);
+
+    // Stage 1: Analyze the commit
+    console.log('[InitialReport] Starting analysis...');
+    
+    const analysisResult = await analyze({
+      commitHash: lastCommit.sha,
+      commitMessage: lastCommit.commit.message,
+      author: lastCommit.commit.author.name,
+      diff: diff.substring(0, 50000), // Limit diff size
+      filesChanged: filesChanged,
+      projectContext: {
+        name: project.name,
+        techStack: project.settings?.techStack || []
+      },
+      templateSections: template.sections
+    });
+
+    console.log('[InitialReport] Analysis result:', {
+      success: analysisResult.success,
+      changeType: analysisResult.changeType,
+      suggestedSections: analysisResult.suggestedSections?.length || 0
+    });
+
+    if (!analysisResult.success) {
+      return res.status(500).json({
+        success: false,
+        error: 'Analysis failed',
+        details: analysisResult.error
+      });
+    }
+
+    // Stage 2: Generate content for sections
+    console.log('[InitialReport] Starting content generation...');
+    
+    const writerResults = await generateForAllSections({
+      analysisResult,
+      templateSections: template.sections,
+      report,
+      projectMetadata: {
+        name: project.name,
+        description: project.description || ''
+      },
+      commitInfo: {
+        hash: lastCommit.sha,
+        message: lastCommit.commit.message,
+        author: lastCommit.commit.author.name
+      }
+    });
+
+    console.log('[InitialReport] Writer results:', writerResults.map(r => ({
+      sectionId: r.sectionId,
+      success: r.success,
+      contentLength: r.content?.length || 0
+    })));
+
+    // Update the report with generated content
+    const successfulUpdates = [];
+    const failedUpdates = [];
+
+    for (const result of writerResults) {
+      if (result.success && result.content) {
+        // Find section in report
+        const sectionIndex = report.sections.findIndex(
+          s => s.templateSectionId === result.sectionId
+        );
+        
+        if (sectionIndex !== -1) {
+          report.sections[sectionIndex].content = result.content;
+          report.sections[sectionIndex].lastUpdated = new Date();
+          report.sections[sectionIndex].aiLastTouched = true;
+          report.sections[sectionIndex].wordCount = result.content.split(/\s+/).filter(Boolean).length;
+          report.sections[sectionIndex].contributions.push({
+            commitHash: lastCommit.sha,
+            addedAt: new Date(),
+            contentPreview: result.content.substring(0, 100)
+          });
+          successfulUpdates.push(result);
+        }
+      } else {
+        failedUpdates.push(result);
+      }
+    }
+
+    // Save the report
+    report.metadata.lastAIUpdate = new Date();
+    report.updateWordCount();
+    await report.save();
+
+    // Log to AutoLog
+    if (successfulUpdates.length > 0) {
+      await autoLogger.logSuccess({
+        projectId: project._id,
+        reportId: report._id,
+        commitHash: lastCommit.sha,
+        commitMessage: lastCommit.commit.message,
+        author: lastCommit.commit.author.name,
+        result: {
+          sectionTitle: successfulUpdates.map(u => u.sectionTitle).join(', '),
+          sectionId: successfulUpdates[0].sectionId,
+          content: successfulUpdates[0].content,
+          wordCount: successfulUpdates.reduce((sum, u) => sum + (u.wordCount || 0), 0)
+        },
+        pipelineTrace: {
+          type: 'initial_report',
+          triggeredAt: new Date()
+        },
+        analysisResult: {
+          changeType: analysisResult.changeType,
+          impactLevel: analysisResult.impactLevel,
+          semanticTags: analysisResult.semanticTags
+        }
+      });
+    }
+
+    console.log(`[InitialReport] Completed: ${successfulUpdates.length} sections updated`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Initial report generated successfully',
+      stats: {
+        sectionsUpdated: successfulUpdates.length,
+        sectionsFailed: failedUpdates.length,
+        commitProcessed: lastCommit.sha.substring(0, 7)
+      }
+    });
+
+  } catch (error) {
+    console.error('[InitialReport] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate initial report',
+      details: error.message
+    });
+  }
+}
+
 module.exports = {
   getTemplates,
   createProject,
   setupWebhook,
   getProjectById,
-  deleteProject
+  deleteProject,
+  generateInitialReport
 };

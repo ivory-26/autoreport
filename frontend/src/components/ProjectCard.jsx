@@ -1,13 +1,61 @@
 'use client';
 
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { FileText, GitBranch, Clock, ArrowRight, ExternalLink } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { FileText, GitBranch, Clock, ArrowRight, ExternalLink, MoreVertical, Trash2, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
 export function ProjectCard({ project, statusColor, formattedDate }) {
+  const router = useRouter();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const handleDelete = async () => {
+    try {
+      setIsDeleting(true);
+      
+      const response = await fetch(`/api/projects/${project._id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to delete project');
+      }
+
+      // Refresh the page to update the project list
+      router.refresh();
+    } catch (error) {
+      console.error('Error deleting project:', error);
+      alert('Failed to delete project. Please try again.');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+    }
+  };
+
   return (
     <motion.div
       whileHover={{ y: -5 }}
@@ -19,7 +67,7 @@ export function ProjectCard({ project, statusColor, formattedDate }) {
       <Card className="h-full flex flex-col overflow-hidden rounded-3xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-xl dark:bg-zinc-900/50">
         <CardHeader className="pb-4">
           <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1.5 overflow-hidden">
+            <div className="space-y-1.5 overflow-hidden flex-1">
               <CardTitle className="text-xl font-bold truncate leading-none tracking-tight">
                 {project.name}
               </CardTitle>
@@ -28,11 +76,77 @@ export function ProjectCard({ project, statusColor, formattedDate }) {
                 <span className="truncate">{project.repoFullName}</span>
               </CardDescription>
             </div>
-            {project.report && (
-              <Badge variant={statusColor} className="shrink-0 capitalize shadow-sm">
-                {project.report.status}
-              </Badge>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {project.report && (
+                <Badge variant={statusColor} className="capitalize shadow-sm">
+                  {project.report.status}
+                </Badge>
+              )}
+              
+              {/* More Options Menu */}
+              <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg">
+                      <MoreVertical className="h-4 w-4" />
+                      <span className="sr-only">More options</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem asChild>
+                      <Link href={`/project/${project._id}`} className="cursor-pointer">
+                        <FileText className="mr-2 h-4 w-4" />
+                        View Report
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href={project.repoUrl || '#'} target="_blank" className="cursor-pointer">
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        Open Repository
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <AlertDialogTrigger asChild>
+                      <DropdownMenuItem className="text-destructive focus:text-destructive cursor-pointer">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete Project
+                      </DropdownMenuItem>
+                    </AlertDialogTrigger>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Project</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to delete <strong>&quot;{project.name}&quot;</strong>? 
+                      This will permanently remove the project and all associated reports. 
+                      This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      disabled={isDeleting}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {isDeleting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </>
+                      )}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </div>
         </CardHeader>
         

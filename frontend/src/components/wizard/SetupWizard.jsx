@@ -332,6 +332,14 @@ function SuccessStep({ createdProject, onClose }) {
     router.refresh();
   };
 
+  const handleViewReport = () => {
+    if (createdProject?.report?._id) {
+      onClose();
+      router.push(`/project/${createdProject.report._id}`);
+      router.refresh();
+    }
+  };
+
   const handleGoToDashboard = () => {
     onClose();
     router.refresh();
@@ -351,6 +359,46 @@ function SuccessStep({ createdProject, onClose }) {
           Your project &quot;{createdProject?.project?.name}&quot; has been created successfully.
         </p>
       </div>
+
+      {/* Initial Report Generation Status */}
+      {createdProject?.generatingInitialReport && (
+        <Card className="border-blue-200 dark:border-blue-800">
+          <CardContent className="p-3">
+            <div className="flex items-start gap-2">
+              <div className="h-4 w-4 mt-0.5">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
+              </div>
+              <div className="text-left text-sm">
+                <p className="font-medium text-sm text-blue-600 dark:text-blue-400">
+                  Generating Initial Report
+                </p>
+                <p className="text-muted-foreground text-xs mt-0.5">
+                  AutoReport is analyzing your last commit and writing initial content. This may take a moment.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Report Generated Successfully */}
+      {!createdProject?.generatingInitialReport && createdProject?.report && (
+        <Card className="border-green-200 dark:border-green-800">
+          <CardContent className="p-3">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
+              <div className="text-left text-sm flex-1">
+                <p className="font-medium text-sm text-green-600 dark:text-green-400">
+                  Initial Report Generated
+                </p>
+                <p className="text-muted-foreground text-xs mt-0.5">
+                  Your first report has been created and is ready to view.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {createdProject?.webhook && (
         <Card className={createdProject.webhook.success ? 'border-green-200' : 'border-yellow-200'}>
@@ -385,6 +433,12 @@ function SuccessStep({ createdProject, onClose }) {
         <Button variant="outline" onClick={handleGoToDashboard}>
           Go to Dashboard
         </Button>
+        {createdProject?.report?._id && (
+          <Button onClick={handleViewReport} className="gap-2 bg-blue-600 hover:bg-blue-700">
+            View Report
+            <FileText className="h-4 w-4" />
+          </Button>
+        )}
         <Button onClick={handleViewProject} className="gap-2">
           View Project
           <ExternalLink className="h-4 w-4" />

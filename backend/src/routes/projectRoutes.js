@@ -12,7 +12,8 @@ const {
   createProject,
   setupWebhook,
   getProjectById,
-  deleteProject
+  deleteProject,
+  generateInitialReport
 } = require('../controllers/projectController');
 
 // Get all available templates
@@ -23,6 +24,9 @@ router.post('/', createProject);
 
 // Setup GitHub webhook for a project
 router.post('/:projectId/webhook', setupWebhook);
+
+// Generate initial report based on last commit
+router.post('/:projectId/generate-initial', generateInitialReport);
 
 // Get project by ID
 router.get('/:projectId', getProjectById);

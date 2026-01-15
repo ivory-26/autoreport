@@ -11,8 +11,9 @@ const Groq = require('groq-sdk');
 const { withTimeout, getTimeoutFromEnv, TimeoutError } = require('./timeout');
 const { WRITER_SYSTEM_PROMPT, createWriterUserPrompt, createSectionIntroPrompt } = require('../prompts/writerPrompt');
 
-// Model configuration  
-const MODEL_NAME = 'qwen/qwen3-32b'; // Qwen3-32B for creative technical writing
+// Model configuration - primary and fallback models
+const PRIMARY_MODEL = 'qwen/qwen3-32b'; // Qwen3-32B for creative technical writing
+const FALLBACK_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 // Initialize Groq client
 let groqClient = null;
@@ -132,10 +133,10 @@ async function generate({
 }) {
   const timeoutMs = getTimeoutFromEnv(30000);
 
-  try {
+  // Helper function to call the API with a specific model
+  async function callWithModel(modelName) {
     const client = initializeClient();
 
-    // Create the prompt
     const userPrompt = createWriterUserPrompt({
       analysisResult,
       targetSection,
@@ -143,28 +144,44 @@ async function generate({
       commitInfo
     });
 
-    // Call Groq with timeout
-    const result = await withTimeout(
-      (async () => {
-        const chatCompletion = await client.chat.completions.create({
-          messages: [
-            {
-              role: 'system',
-              content: WRITER_SYSTEM_PROMPT + '\n\nRespond only with valid JSON. No markdown code fences.'
-            },
-            {
-              role: 'user',
-              content: userPrompt
-            }
-          ],
-          model: MODEL_NAME,
-          temperature: 0.7,
-          max_tokens: 4096,
-          response_format: { type: 'json_object' }
-        });
+    const chatCompletion = await client.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: WRITER_SYSTEM_PROMPT + '\n\nRespond only with valid JSON. No markdown code fences.'
+        },
+        {
+          role: 'user',
+          content: userPrompt
+        }
+      ],
+      model: modelName,
+      temperature: 0.7,
+      max_tokens: 4096,
+      response_format: { type: 'json_object' }
+    });
 
-        return chatCompletion.choices[0]?.message?.content || '{}';
-      })(),
+    return chatCompletion.choices[0]?.message?.content || '{}';
+  }
+
+  // Check if error is a rate limit / token limit error
+  function isRateLimitError(error) {
+    const message = error?.message?.toLowerCase() || '';
+    const status = error?.status || error?.statusCode;
+    return (
+      status === 413 ||
+      status === 429 ||
+      message.includes('rate limit') ||
+      message.includes('token') ||
+      message.includes('too large') ||
+      message.includes('request too large')
+    );
+  }
+
+  try {
+    // Try with primary model first
+    const result = await withTimeout(
+      callWithModel(PRIMARY_MODEL),
       timeoutMs,
       'Writer Agent'
     );
@@ -173,22 +190,57 @@ async function generate({
     const parsed = parseWriterResponse(result);
     const validated = validateWriterResult(parsed, targetSection);
 
-    console.log(`[Writer] Generated ${validated.wordCount} words for section "${targetSection.title}"`);
+    console.log(`[Writer] Generated ${validated.wordCount} words for section "${targetSection.title}" using ${PRIMARY_MODEL}`);
 
     return {
       success: true,
       ...validated,
       metadata: {
         generatedAt: new Date(),
-        model: MODEL_NAME,
+        model: PRIMARY_MODEL,
         sourceCommit: commitInfo.hash
       }
     };
 
-  } catch (error) {
-    console.error(`[Writer] Error generating content for "${targetSection.title}":`, error.message);
+  } catch (primaryError) {
+    // If it's a rate limit error, try fallback model
+    if (isRateLimitError(primaryError)) {
+      console.log(`[Writer] Rate limit hit on ${PRIMARY_MODEL}, trying fallback model ${FALLBACK_MODEL}...`);
 
-    if (error instanceof TimeoutError) {
+      try {
+        const result = await withTimeout(
+          callWithModel(FALLBACK_MODEL),
+          timeoutMs,
+          'Writer Agent (Fallback)'
+        );
+
+        const parsed = parseWriterResponse(result);
+        const validated = validateWriterResult(parsed, targetSection);
+
+        console.log(`[Writer] Generated ${validated.wordCount} words for section "${targetSection.title}" using fallback ${FALLBACK_MODEL}`);
+
+        return {
+          success: true,
+          ...validated,
+          metadata: {
+            generatedAt: new Date(),
+            model: FALLBACK_MODEL,
+            usedFallback: true,
+            sourceCommit: commitInfo.hash
+          }
+        };
+
+      } catch (fallbackError) {
+        console.error(`[Writer] Fallback model also failed:`, fallbackError.message);
+        // Continue to error handling below
+        throw fallbackError;
+      }
+    }
+
+    // Handle non-rate-limit errors
+    console.error(`[Writer] Error generating content for "${targetSection.title}":`, primaryError.message);
+
+    if (primaryError instanceof TimeoutError) {
       return {
         success: false,
         error: 'Content generation timed out',
@@ -198,21 +250,21 @@ async function generate({
         content: null,
         metadata: {
           generatedAt: new Date(),
-          error: error.message
+          error: primaryError.message
         }
       };
     }
 
     return {
       success: false,
-      error: error.message,
+      error: primaryError.message,
       errorCode: 'AI_ERROR',
       sectionId: targetSection.id,
       sectionTitle: targetSection.title,
       content: null,
       metadata: {
         generatedAt: new Date(),
-        error: error.message
+        error: primaryError.message
       }
     };
   }
@@ -227,31 +279,47 @@ async function generate({
 async function generateSectionIntro(section, projectMetadata) {
   const timeoutMs = getTimeoutFromEnv(15000); // Shorter timeout for intros
 
-  try {
+  // Helper function to call the API with a specific model
+  async function callWithModel(modelName) {
     const client = initializeClient();
-
     const prompt = createSectionIntroPrompt(section, projectMetadata);
 
-    const result = await withTimeout(
-      (async () => {
-        const chatCompletion = await client.chat.completions.create({
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a technical writer. Generate a brief, professional introduction paragraph.'
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          model: MODEL_NAME,
-          temperature: 0.6,
-          max_tokens: 500
-        });
+    const chatCompletion = await client.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a technical writer. Generate a brief, professional introduction paragraph.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      model: modelName,
+      temperature: 0.6,
+      max_tokens: 500
+    });
 
-        return chatCompletion.choices[0]?.message?.content || '';
-      })(),
+    return chatCompletion.choices[0]?.message?.content || '';
+  }
+
+  // Check if error is a rate limit / token limit error
+  function isRateLimitError(error) {
+    const message = error?.message?.toLowerCase() || '';
+    const status = error?.status || error?.statusCode;
+    return (
+      status === 413 ||
+      status === 429 ||
+      message.includes('rate limit') ||
+      message.includes('token') ||
+      message.includes('too large') ||
+      message.includes('request too large')
+    );
+  }
+
+  try {
+    const result = await withTimeout(
+      callWithModel(PRIMARY_MODEL),
       timeoutMs,
       'Section Intro Generator'
     );
@@ -264,11 +332,36 @@ async function generateSectionIntro(section, projectMetadata) {
       intro = intro.replace(/```[^\n]*\n?/g, '').trim();
     }
 
-    console.log(`[Writer] Generated intro for section "${section.title}"`);
+    console.log(`[Writer] Generated intro for section "${section.title}" using ${PRIMARY_MODEL}`);
     return intro;
 
-  } catch (error) {
-    console.error(`[Writer] Error generating intro for "${section.title}":`, error.message);
+  } catch (primaryError) {
+    // If it's a rate limit error, try fallback model
+    if (isRateLimitError(primaryError)) {
+      console.log(`[Writer] Rate limit hit on ${PRIMARY_MODEL} for intro, trying fallback model ${FALLBACK_MODEL}...`);
+
+      try {
+        const result = await withTimeout(
+          callWithModel(FALLBACK_MODEL),
+          timeoutMs,
+          'Section Intro Generator (Fallback)'
+        );
+
+        let intro = result.trim();
+        if (intro.startsWith('```')) {
+          intro = intro.replace(/```[^\n]*\n?/g, '').trim();
+        }
+
+        console.log(`[Writer] Generated intro for section "${section.title}" using fallback ${FALLBACK_MODEL}`);
+        return intro;
+
+      } catch (fallbackError) {
+        console.error(`[Writer] Fallback model also failed for intro:`, fallbackError.message);
+        return '';
+      }
+    }
+
+    console.error(`[Writer] Error generating intro for "${section.title}":`, primaryError.message);
     return ''; // Return empty string on error, section can still be used
   }
 }

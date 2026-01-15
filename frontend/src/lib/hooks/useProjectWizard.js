@@ -175,7 +175,56 @@ export function useProjectWizard() {
   }, []);
 
   /**
-   * Create the project
+   * Fetch the latest report for a project
+   */
+  const fetchLatestReport = useCallback(async (projectId) => {
+    try {
+      // Poll for the report - it may take a moment to be created
+      for (let i = 0; i < 10; i++) {
+        const response = await fetch(`/api/projects/${projectId}`);
+        if (!response.ok) {
+          console.warn('[Wizard] Failed to fetch project details');
+          break;
+        }
+
+        const data = await response.json();
+        
+        // Check if project has a report
+        if (data.report && data.report._id) {
+          // Update the createdProject with report data
+          setCreatedProject(prev => ({
+            ...prev,
+            generatingInitialReport: false,
+            report: {
+              _id: data.report._id,
+              title: data.report.title,
+              status: data.report.status
+            }
+          }));
+          console.log('[Wizard] Found generated report:', data.report._id);
+          return;
+        }
+
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      // If we didn't find a report, just mark generation as complete
+      setCreatedProject(prev => ({
+        ...prev,
+        generatingInitialReport: false
+      }));
+    } catch (err) {
+      console.warn('[Wizard] Error fetching latest report:', err);
+      setCreatedProject(prev => ({
+        ...prev,
+        generatingInitialReport: false
+      }));
+    }
+  }, []);
+
+  /**
+   * Create the project and generate initial report
    */
   const createProject = useCallback(async () => {
     if (!selectedRepo || !selectedTemplate || !projectName.trim()) {
@@ -189,6 +238,7 @@ export function useProjectWizard() {
 
       const [repoOwner, repoName] = selectedRepo.fullName.split('/');
 
+      // Step 1: Create the project
       const response = await fetch('/api/projects/create', {
         method: 'POST',
         headers: {
@@ -213,7 +263,37 @@ export function useProjectWizard() {
         throw new Error(data.error || 'Failed to create project');
       }
 
-      setCreatedProject(data);
+      // Step 2: Generate initial report from last commit (async, don't block)
+      const projectId = data.project.id;
+      console.log('[Wizard] Triggering initial report generation for project:', projectId);
+      
+      // Fire and forget - don't wait for this to complete
+      fetch(`/api/projects/${projectId}/generate-initial`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          owner: repoOwner,
+          repo: repoName
+        })
+      }).then(res => res.json()).then(result => {
+        if (result.success) {
+          console.log('[Wizard] Initial report generation completed:', result.stats);
+          // Fetch the report after generation completes
+          fetchLatestReport(projectId);
+        } else {
+          console.warn('[Wizard] Initial report generation failed:', result.error);
+        }
+      }).catch(err => {
+        console.warn('[Wizard] Initial report generation error:', err);
+      });
+
+      // Add generation status to created project
+      setCreatedProject({
+        ...data,
+        generatingInitialReport: true
+      });
       setStep(4);
       return true;
     } catch (err) {
@@ -223,7 +303,7 @@ export function useProjectWizard() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedRepo, selectedTemplate, projectName]);
+  }, [selectedRepo, selectedTemplate, projectName, fetchLatestReport]);
 
   /**
    * Filter repos by search query
@@ -262,6 +342,7 @@ export function useProjectWizard() {
     nextStep,
     prevStep,
     createProject,
+    fetchLatestReport,
     setError
   };
 }
