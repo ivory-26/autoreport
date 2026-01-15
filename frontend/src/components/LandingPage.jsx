@@ -132,11 +132,6 @@ export default function LandingPage({ session }) {
                         Start for free <ArrowRight className="ml-2 h-5 w-5" />
                     </LandingButton>
                 </Link>
-                <Link href="https://github.com/ivory-26/autoreport" target="_blank">
-                     <LandingButton variant="outline" className="text-lg h-14 px-10">
-                        <Github className="mr-2 h-5 w-5" /> Star on GitHub
-                    </LandingButton>
-                </Link>
                 </>
             )}
           </motion.div>
