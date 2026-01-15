@@ -37,6 +37,26 @@ const sectionContentSchema = new mongoose.Schema({
     commitHash: String,
     addedAt: Date,
     contentPreview: String
+  }],
+  // Store previous versions for revert functionality
+  previousVersions: [{
+    content: {
+      type: String,
+      required: true
+    },
+    wordCount: {
+      type: Number,
+      default: 0
+    },
+    savedAt: {
+      type: Date,
+      default: Date.now
+    },
+    reason: {
+      type: String,
+      enum: ['ai_update', 'regenerate', 'manual'],
+      default: 'ai_update'
+    }
   }]
 }, { _id: false });
 

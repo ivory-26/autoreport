@@ -259,9 +259,27 @@ async function processWebhookJob(job) {
             lastUpdated: new Date(),
             aiLastTouched: true,
             wordCount: 0,
-            contributions: []
+            contributions: [],
+            previousVersions: []
           };
           report.sections.push(section);
+        }
+
+        // Save current content as previous version before updating (for revert functionality)
+        if (section.content && section.content.trim()) {
+          if (!section.previousVersions) {
+            section.previousVersions = [];
+          }
+          section.previousVersions.push({
+            content: section.content,
+            wordCount: section.wordCount || 0,
+            savedAt: new Date(),
+            reason: 'ai_update'
+          });
+          // Keep only last 5 versions
+          if (section.previousVersions.length > 5) {
+            section.previousVersions = section.previousVersions.slice(-5);
+          }
         }
 
         // Append or prepend content

@@ -15,7 +15,11 @@ import {
   ChevronRight,
   Sparkles,
   X,
-  ChevronLeft
+  ChevronLeft,
+  Loader2,
+  Undo2,
+  Check,
+  CheckCheck
 } from 'lucide-react';
 
 // Helper to normalize GitHub URL (handles both HTTPS and git@ formats)
@@ -32,7 +36,7 @@ function normalizeGitHubUrl(repoUrl) {
   return repoUrl.replace(/\.git$/, '');
 }
 
-function SectionContent({ section, onDismissHighlight, repoUrl }) {
+function SectionContent({ section, onDismissHighlight, onRegenerate, onRevert, onAccept, repoUrl, projectId, isRegenerating, revertTooltip }) {
   const hasNewContent = section.aiLastTouched;
   const latestCommit = section.contributions?.[section.contributions.length - 1];
 
@@ -51,7 +55,12 @@ function SectionContent({ section, onDismissHighlight, repoUrl }) {
     >
       {/* Content */}
       <div className={`prose prose-sm dark:prose-invert max-w-none px-4 py-3 ${hasNewContent ? 'border-l-4 border-green-500 rounded-l-none' : ''}`}>
-        {section.content ? (
+        {isRegenerating ? (
+          <div className="flex items-center gap-2 text-muted-foreground py-4">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Regenerating content...</span>
+          </div>
+        ) : section.content ? (
           <div
             dangerouslySetInnerHTML={{ __html: section.content.replace(/\n/g, '<br/>') }}
           />
@@ -62,8 +71,8 @@ function SectionContent({ section, onDismissHighlight, repoUrl }) {
         )}
       </div>
 
-      {/* Hover Actions - Only show if there is content */}
-      {section.content && (
+      {/* Hover Actions - Only show if there is content and not regenerating */}
+      {section.content && !isRegenerating && (
         <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-3 right-4 flex items-center gap-2 bg-background/95 backdrop-blur-sm p-1 rounded-full shadow-sm border text-xs z-10">
           {commitUrl && (
             <a
@@ -83,6 +92,7 @@ function SectionContent({ section, onDismissHighlight, repoUrl }) {
             size="sm"
             className="h-7 px-3 text-xs gap-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/50 rounded-full"
             title="Regenerate with AI"
+            onClick={() => onRegenerate?.(section.templateSectionId)}
           >
             <Sparkles className="h-3.5 w-3.5" />
             Regenerate
@@ -92,22 +102,50 @@ function SectionContent({ section, onDismissHighlight, repoUrl }) {
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-3 text-xs gap-1.5 text-muted-foreground hover:text-foreground rounded-full"
-              onClick={() => onDismissHighlight?.(section.id)}
+              className="h-7 px-3 text-xs gap-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-950/50 rounded-full"
+              onClick={() => onAccept?.(section.templateSectionId)}
+              title="Accept this content"
             >
-              <X className="h-3.5 w-3.5" />
-              Dismiss
+              <Check className="h-3.5 w-3.5" />
+              Accept
             </Button>
           )}
+
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-3 text-xs gap-1.5 text-muted-foreground hover:text-foreground rounded-full"
+              onClick={() => onRevert?.(section.templateSectionId)}
+              title="Revert to previous version"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+              Revert
+            </Button>
+            {revertTooltip && (
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-foreground text-background text-xs rounded-md whitespace-nowrap shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200">
+                No more previous versions
+                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-foreground" />
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-export function ReportViewer({ report, onDismissHighlight, repoUrl }) {
+export function ReportViewer({ report: initialReport, onDismissHighlight, repoUrl, projectId }) {
+  const [report, setReport] = useState(initialReport);
   const [collapsedSections, setCollapsedSections] = useState(new Set());
   const [currentPage, setCurrentPage] = useState(0);
+  const [regeneratingSections, setRegeneratingSections] = useState(new Set());
+  const [revertTooltips, setRevertTooltips] = useState(new Set());
+  const [acceptingAll, setAcceptingAll] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Count sections with new AI content
+  const sectionsWithNewContent = report?.sections?.filter(s => s.aiLastTouched) || [];
 
   if (!report || !report.sections) {
     return (
@@ -129,6 +167,194 @@ export function ReportViewer({ report, onDismissHighlight, repoUrl }) {
     });
   };
 
+  // Handle regenerate section
+  const handleRegenerate = async (sectionId) => {
+    setError(null);
+    setRegeneratingSections(prev => new Set(prev).add(sectionId));
+
+    try {
+      // Use projectId from report if not provided as prop
+      const pid = projectId || report.projectId;
+
+      const response = await fetch(`/api/projects/${pid}/sections/${sectionId}/regenerate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to regenerate section');
+      }
+
+      // Update the local state with new content
+      setReport(prev => ({
+        ...prev,
+        sections: prev.sections.map(section =>
+          section.templateSectionId === sectionId
+            ? {
+              ...section,
+              content: data.section.content,
+              wordCount: data.section.wordCount,
+              aiLastTouched: true,
+              lastUpdated: new Date().toISOString()
+            }
+            : section
+        )
+      }));
+
+    } catch (err) {
+      console.error('Regenerate error:', err);
+      setError(err.message);
+    } finally {
+      setRegeneratingSections(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(sectionId);
+        return newSet;
+      });
+    }
+  };
+
+  // Handle revert section
+  const handleRevert = async (sectionId) => {
+    setError(null);
+
+    try {
+      // Use projectId from report if not provided as prop
+      const pid = projectId || report.projectId;
+
+      const response = await fetch(`/api/projects/${pid}/sections/${sectionId}/revert`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // Special handling for "no previous version" error - show tooltip on button
+        if (data.error?.includes('No previous version')) {
+          setRevertTooltips(prev => new Set(prev).add(sectionId));
+          // Auto-dismiss tooltip after 2 seconds
+          setTimeout(() => {
+            setRevertTooltips(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(sectionId);
+              return newSet;
+            });
+          }, 2000);
+          return;
+        }
+        throw new Error(data.error || 'Failed to revert section');
+      }
+
+      // Update the local state with reverted content
+      setReport(prev => ({
+        ...prev,
+        sections: prev.sections.map(section =>
+          section.templateSectionId === sectionId
+            ? {
+              ...section,
+              content: data.section.content,
+              wordCount: data.section.wordCount,
+              aiLastTouched: false,
+              lastUpdated: new Date().toISOString()
+            }
+            : section
+        )
+      }));
+
+      // Call the original dismiss handler if provided
+      onDismissHighlight?.(sectionId);
+
+    } catch (err) {
+      console.error('Revert error:', err);
+      setError(err.message);
+    }
+  };
+
+  // Handle accept section
+  const handleAccept = async (sectionId) => {
+    setError(null);
+
+    try {
+      const pid = projectId || report.projectId;
+
+      const response = await fetch(`/api/projects/${pid}/sections/${sectionId}/accept`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to accept section');
+      }
+
+      // Update the local state
+      setReport(prev => ({
+        ...prev,
+        sections: prev.sections.map(section =>
+          section.templateSectionId === sectionId
+            ? {
+              ...section,
+              aiLastTouched: false,
+              lastUpdated: new Date().toISOString()
+            }
+            : section
+        )
+      }));
+
+    } catch (err) {
+      console.error('Accept error:', err);
+      setError(err.message);
+    }
+  };
+
+  // Handle accept all sections
+  const handleAcceptAll = async () => {
+    setError(null);
+    setAcceptingAll(true);
+
+    try {
+      const pid = projectId || report.projectId;
+
+      const response = await fetch(`/api/projects/${pid}/sections/accept-all`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to accept all sections');
+      }
+
+      // Update the local state - set all aiLastTouched to false
+      setReport(prev => ({
+        ...prev,
+        sections: prev.sections.map(section => ({
+          ...section,
+          aiLastTouched: false,
+          lastUpdated: new Date().toISOString()
+        }))
+      }));
+
+    } catch (err) {
+      console.error('Accept all error:', err);
+      setError(err.message);
+    } finally {
+      setAcceptingAll(false);
+    }
+  };
+
   // Pagination: Split sections into pages (4-5 sections per page)
   const SECTIONS_PER_PAGE = 5;
   const sections = report.sections;
@@ -138,15 +364,25 @@ export function ReportViewer({ report, onDismissHighlight, repoUrl }) {
   const currentSections = sections.slice(startIndex, endIndex);
 
   return (
-    <div className="w-full flex flex-col items-center bg-muted/10 min-h-screen py-8 gap-6">
+    <div className="w-full flex flex-col bg-muted/10 min-h-screen py-8 gap-6">
+      {/* Error Message */}
+      {error && (
+        <div className="w-full bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg flex items-center justify-between">
+          <span className="text-sm">{error}</span>
+          <Button variant="ghost" size="sm" onClick={() => setError(null)}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
       {/* A4 Paper-like Container - Fixed Height */}
-      <div className="w-full max-w-[794px] bg-card text-card-foreground shadow-xl rounded-xl border h-[1123px] flex flex-col relative overflow-hidden">
+      <div className="w-full bg-card text-card-foreground shadow-xl rounded-xl border min-h-[800px] flex flex-col relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-t-xl opacity-80" />
 
         {/* Header */}
-        <div className="px-12 pt-16 pb-6 space-y-3 flex-shrink-0">
+        <div className="px-8 pt-16 pb-6 space-y-3 flex-shrink-0">
           <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold tracking-tight text-foreground/90 font-serif">{report.title}</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground/90 font-serif leading-tight py-1">{report.title}</h1>
             <Badge variant={report.status === 'final' ? 'default' : 'secondary'} className="uppercase tracking-wider text-[10px]">
               {report.status}
             </Badge>
@@ -172,15 +408,42 @@ export function ReportViewer({ report, onDismissHighlight, repoUrl }) {
           </div>
         </div>
 
+        {/* Accept All Button - Show when there are sections with new content */}
+        {sectionsWithNewContent.length > 0 && (
+          <div className="px-12 pb-3 flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                <span>{sectionsWithNewContent.length} section{sectionsWithNewContent.length > 1 ? 's' : ''} with new AI content</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-green-600 border-green-200 hover:bg-green-50 hover:text-green-700 dark:text-green-400 dark:border-green-800 dark:hover:bg-green-950"
+                onClick={handleAcceptAll}
+                disabled={acceptingAll}
+              >
+                {acceptingAll ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCheck className="h-4 w-4" />
+                )}
+                Accept All
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="px-12 pb-3 flex-shrink-0">
           <Separator />
         </div>
 
         {/* Sections - Scrollable Content Area */}
-        <div className="px-12 py-6 space-y-6 flex-1 overflow-y-auto">
+        <div className="px-8 py-6 space-y-6 flex-1 overflow-y-auto">
           {currentSections.map((section) => {
             const isCollapsed = collapsedSections.has(section.id);
             const isSubSection = section.number.includes('.');
+            const isRegenerating = regeneratingSections.has(section.templateSectionId);
 
             return (
               <div key={section.id} className={`${isSubSection ? 'ml-6 mt-3' : 'mt-6'}`}>
@@ -202,6 +465,9 @@ export function ReportViewer({ report, onDismissHighlight, repoUrl }) {
                   {section.aiLastTouched && (
                     <span className="ml-2 h-2 w-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]" title="New AI content" />
                   )}
+                  {isRegenerating && (
+                    <Loader2 className="ml-2 h-4 w-4 animate-spin text-blue-500" />
+                  )}
                 </div>
 
                 {/* Section Content */}
@@ -209,7 +475,13 @@ export function ReportViewer({ report, onDismissHighlight, repoUrl }) {
                   <SectionContent
                     section={section}
                     onDismissHighlight={onDismissHighlight}
+                    onRegenerate={handleRegenerate}
+                    onRevert={handleRevert}
+                    onAccept={handleAccept}
                     repoUrl={repoUrl}
+                    projectId={projectId || report.projectId}
+                    isRegenerating={isRegenerating}
+                    revertTooltip={revertTooltips.has(section.templateSectionId)}
                   />
                 </div>
               </div>
@@ -218,7 +490,7 @@ export function ReportViewer({ report, onDismissHighlight, repoUrl }) {
         </div>
 
         {/* Footer with Page Number */}
-        <div className="px-12 py-4 border-t bg-muted/5 rounded-b-xl flex-shrink-0">
+        <div className="px-8 py-4 border-t bg-muted/5 rounded-b-xl flex-shrink-0">
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground font-medium tracking-wide opacity-50">
               AUTOREPORT • {new Date().getFullYear()}
@@ -232,7 +504,7 @@ export function ReportViewer({ report, onDismissHighlight, repoUrl }) {
 
       {/* Pagination Controls */}
       {totalPages > 1 && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-center gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -273,3 +545,4 @@ export function ReportViewer({ report, onDismissHighlight, repoUrl }) {
     </div>
   );
 }
+

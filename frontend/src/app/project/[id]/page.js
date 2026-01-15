@@ -4,20 +4,14 @@ import Link from 'next/link';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import { Report, Project, AutoLog } from '@/lib/models';
-import { ReportViewer } from '@/components/ReportViewer';
-import { AuditLog } from '@/components/AuditLog';
-import { CollaboratorsList } from '@/components/CollaboratorsList';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ProjectTabs } from '@/components/ProjectTabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { 
   ArrowLeft, 
   GitBranch, 
   ExternalLink, 
-  Download,
-  History,
-  FileText
+  Download
 } from 'lucide-react';
 
 async function getReportData(id) {
@@ -74,7 +68,7 @@ export default async function ProjectPage({ params }) {
   const isOwner = project?.ownerUsername?.toLowerCase() === username?.toLowerCase();
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 space-y-8">
+    <div className="mx-auto max-w-7xl px-4 py-8 space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div className="space-y-2">
@@ -84,7 +78,7 @@ export default async function ProjectPage({ params }) {
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <h1 className="text-3xl font-bold tracking-tight">{project?.name || 'Project'}</h1>
+            <h1 className="text-3xl font-bold tracking-tight leading-tight py-1">{project?.name || 'Project'}</h1>
             <Badge variant="outline" className="text-sm px-3 py-1 shadow-sm border-primary/20 bg-primary/5 text-primary">
               {report.status}
             </Badge>
@@ -114,80 +108,13 @@ export default async function ProjectPage({ params }) {
         </div>
       </div>
 
-      <Separator />
-
-      {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Report Viewer - Main Column */}
-        <div className="lg:col-span-3">
-          <Card>
-            <CardContent className="pt-6">
-              <ReportViewer report={report} repoUrl={project?.repoUrl} />
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Stats Card */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Report Stats
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Sections</span>
-                <span className="font-medium">{report.sections?.length || 0}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Total Words</span>
-                <span className="font-medium">
-                  {report.metadata?.totalWordCount?.toLocaleString() || 0}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Version</span>
-                <span className="font-medium">v{report.metadata?.version || 1}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Template</span>
-                <span className="font-medium text-xs">{report.templateId}</span>
-              </div>
-              {report.metadata?.lastAIUpdate && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Last AI Update</span>
-                  <span className="font-medium text-xs">
-                    {new Date(report.metadata.lastAIUpdate).toLocaleDateString()}
-                  </span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Collaborators Card */}
-          <CollaboratorsList 
-            projectId={project?._id}
-            projectName={project?.name}
-            isOwner={isOwner}
-          />
-
-          {/* Audit Log Card */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <History className="h-4 w-4" />
-                Recent Activity
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <AuditLog logs={logs} repoUrl={project?.repoUrl} />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      {/* Tabs */}
+      <ProjectTabs 
+        report={report}
+        project={project}
+        logs={logs}
+        isOwner={isOwner}
+      />
     </div>
   );
 }

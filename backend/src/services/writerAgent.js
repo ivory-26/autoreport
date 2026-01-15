@@ -479,6 +479,7 @@ async function generateForAllSections({
           id: templateSection.id, // Ensure id is preserved
           title: templateSection.title, // Ensure title is preserved
           existingContent: existingSection?.content || '',
+          contentHistory: existingSection?.contributions || [], // Pass content history for context
           confidence: suggestion.confidence
         });
         console.log(`[Writer] Matched section: ${suggestion.sectionId} -> ${templateSection.id}`);
@@ -498,6 +499,7 @@ async function generateForAllSections({
         id: match.section.id, // Ensure id is preserved
         title: match.section.title, // Ensure title is preserved
         existingContent: existingSection?.content || '',
+        contentHistory: existingSection?.contributions || [], // Pass content history for context
         confidence: match.confidence
       });
       console.log(`[Writer] Fallback section selected: ${match.section.id}`);

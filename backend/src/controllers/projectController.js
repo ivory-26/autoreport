@@ -704,11 +704,444 @@ async function generateInitialReport(req, res) {
   }
 }
 
+/**
+ * Regenerate a section's content using AI
+ * Uses the last contribution's context to regenerate content
+ * @param {Request} req - Express request
+ * @param {Response} res - Express response
+ */
+async function regenerateSection(req, res) {
+  const { projectId, sectionId } = req.params;
+  
+  console.log(`[Regenerate] Starting for project ${projectId}, section ${sectionId}`);
+  
+  try {
+    // Find the project
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+    
+    // Find the report
+    const report = await Report.findOne({ projectId: project._id });
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        error: 'Report not found'
+      });
+    }
+    
+    // Find the section
+    const sectionIndex = report.sections.findIndex(
+      s => s.templateSectionId === sectionId || s.id === sectionId
+    );
+    
+    if (sectionIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        error: 'Section not found'
+      });
+    }
+    
+    const section = report.sections[sectionIndex];
+    
+    // Get the template for section config
+    const template = await findTemplate(project.activeTemplateId);
+    if (!template) {
+      return res.status(404).json({
+        success: false,
+        error: 'Template not found'
+      });
+    }
+    
+    const templateSection = template.sections.find(s => s.id === section.templateSectionId);
+    if (!templateSection) {
+      return res.status(404).json({
+        success: false,
+        error: 'Template section not found'
+      });
+    }
+    
+    // Save current content as previous version before regenerating
+    if (section.content && section.content.trim()) {
+      // Keep only last 5 versions
+      if (!section.previousVersions) {
+        section.previousVersions = [];
+      }
+      section.previousVersions.push({
+        content: section.content,
+        wordCount: section.wordCount || 0,
+        savedAt: new Date(),
+        reason: 'regenerate'
+      });
+      // Limit to 5 versions
+      if (section.previousVersions.length > 5) {
+        section.previousVersions = section.previousVersions.slice(-5);
+      }
+    }
+    
+    // Get context from section's previous contributions
+    const lastContribution = section.contributions?.[section.contributions.length - 1];
+    
+    // Create a mock analysis result based on existing content context
+    // For regeneration, we use the section's existing context
+    const mockAnalysisResult = {
+      changeType: 'feature',
+      impactLevel: 'minor',
+      semanticTags: templateSection.aiHints?.keywords || [],
+      technicalSummary: `Regenerating content for the ${section.title} section based on existing contributions.`,
+      entities: [],
+      suggestedSections: [{ sectionId: section.templateSectionId, confidence: 1.0 }]
+    };
+    
+    // Prepare target section with content history
+    const targetSection = {
+      ...templateSection,
+      id: section.templateSectionId,
+      existingContent: '', // Start fresh for regeneration
+      contentHistory: section.contributions || []
+    };
+    
+    // Generate new content
+    const { generate } = require('../services/writerAgent');
+    const result = await generate({
+      analysisResult: mockAnalysisResult,
+      targetSection,
+      projectMetadata: {
+        name: project.name,
+        description: project.description || ''
+      },
+      commitInfo: {
+        hash: lastContribution?.commitHash || 'regenerate',
+        message: 'Content regeneration',
+        author: 'System'
+      }
+    });
+    
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to regenerate content',
+        details: result.error
+      });
+    }
+    
+    // Update the section with new content
+    report.sections[sectionIndex].content = result.content;
+    report.sections[sectionIndex].wordCount = result.wordCount;
+    report.sections[sectionIndex].lastUpdated = new Date();
+    report.sections[sectionIndex].aiLastTouched = true;
+    
+    // Save the report
+    report.metadata.lastAIUpdate = new Date();
+    report.updateWordCount();
+    await report.save();
+    
+    console.log(`[Regenerate] Successfully regenerated section "${section.title}"`);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Section regenerated successfully',
+      section: {
+        id: section.id,
+        templateSectionId: section.templateSectionId,
+        title: section.title,
+        content: result.content,
+        wordCount: result.wordCount
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Regenerate] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to regenerate section',
+      details: error.message
+    });
+  }
+}
+
+/**
+ * Revert a section to its previous version
+ * @param {Request} req - Express request
+ * @param {Response} res - Express response
+ */
+async function revertSection(req, res) {
+  const { projectId, sectionId } = req.params;
+  
+  console.log(`[Revert] Starting for project ${projectId}, section ${sectionId}`);
+  
+  try {
+    // Find the project
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+    
+    // Find the report
+    const report = await Report.findOne({ projectId: project._id });
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        error: 'Report not found'
+      });
+    }
+    
+    // Find the section
+    const sectionIndex = report.sections.findIndex(
+      s => s.templateSectionId === sectionId || s.id === sectionId
+    );
+    
+    if (sectionIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        error: 'Section not found'
+      });
+    }
+    
+    const section = report.sections[sectionIndex];
+    
+    // Check if there are previous versions to revert to
+    if (!section.previousVersions || section.previousVersions.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No previous version available to revert to'
+      });
+    }
+    
+    // Get the latest previous version and remove it from the array
+    const previousVersions = [...section.previousVersions];
+    const previousVersion = previousVersions.pop();
+    
+    // Update section with previous content and the updated versions array
+    report.sections[sectionIndex].content = previousVersion.content;
+    report.sections[sectionIndex].wordCount = previousVersion.wordCount;
+    report.sections[sectionIndex].lastUpdated = new Date();
+    report.sections[sectionIndex].aiLastTouched = false;
+    report.sections[sectionIndex].previousVersions = previousVersions;
+    
+    // Mark the sections array as modified so Mongoose saves it
+    report.markModified('sections');
+    
+    // Save the report
+    report.updateWordCount();
+    await report.save();
+    
+    console.log(`[Revert] Successfully reverted section "${section.title}"`);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Section reverted successfully',
+      section: {
+        id: section.id,
+        templateSectionId: section.templateSectionId,
+        title: section.title,
+        content: previousVersion.content,
+        wordCount: previousVersion.wordCount
+      },
+      versionsRemaining: previousVersions.length
+    });
+    
+  } catch (error) {
+    console.error('[Revert] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to revert section',
+      details: error.message
+    });
+  }
+}
+
+/**
+ * Accept a section's content (remove AI highlight, keep content revertable)
+ * @param {Request} req - Express request
+ * @param {Response} res - Express response
+ */
+async function acceptSection(req, res) {
+  const { projectId, sectionId } = req.params;
+  
+  console.log(`[Accept] Starting for project ${projectId}, section ${sectionId}`);
+  
+  try {
+    // Find the project
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+    
+    // Find the report
+    const report = await Report.findOne({ projectId: project._id });
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        error: 'Report not found'
+      });
+    }
+    
+    // Find the section
+    const sectionIndex = report.sections.findIndex(
+      s => s.templateSectionId === sectionId || s.id === sectionId
+    );
+    
+    if (sectionIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        error: 'Section not found'
+      });
+    }
+    
+    const section = report.sections[sectionIndex];
+    
+    // Save current content as previous version before accepting (so it can be reverted)
+    if (section.content && section.content.trim()) {
+      if (!section.previousVersions) {
+        section.previousVersions = [];
+      }
+      section.previousVersions.push({
+        content: section.content,
+        wordCount: section.wordCount || 0,
+        savedAt: new Date(),
+        reason: 'manual' // Accepted by user
+      });
+      // Keep only last 5 versions
+      if (section.previousVersions.length > 5) {
+        section.previousVersions = section.previousVersions.slice(-5);
+      }
+    }
+    
+    // Remove AI highlight flag (accept the content)
+    report.sections[sectionIndex].aiLastTouched = false;
+    report.sections[sectionIndex].lastUpdated = new Date();
+    
+    // Save the report
+    await report.save();
+    
+    console.log(`[Accept] Successfully accepted section "${section.title}"`);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Section accepted successfully',
+      section: {
+        id: section.id,
+        templateSectionId: section.templateSectionId,
+        title: section.title,
+        aiLastTouched: false
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Accept] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to accept section',
+      details: error.message
+    });
+  }
+}
+
+/**
+ * Accept all sections with AI changes
+ * @param {Request} req - Express request
+ * @param {Response} res - Express response
+ */
+async function acceptAllSections(req, res) {
+  const { projectId } = req.params;
+  
+  console.log(`[AcceptAll] Starting for project ${projectId}`);
+  
+  try {
+    // Find the project
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+    
+    // Find the report
+    const report = await Report.findOne({ projectId: project._id });
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        error: 'Report not found'
+      });
+    }
+    
+    // Find all sections with AI changes
+    const acceptedSections = [];
+    
+    for (let i = 0; i < report.sections.length; i++) {
+      const section = report.sections[i];
+      
+      if (section.aiLastTouched) {
+        // Save current content as previous version
+        if (section.content && section.content.trim()) {
+          if (!section.previousVersions) {
+            section.previousVersions = [];
+          }
+          section.previousVersions.push({
+            content: section.content,
+            wordCount: section.wordCount || 0,
+            savedAt: new Date(),
+            reason: 'manual'
+          });
+          if (section.previousVersions.length > 5) {
+            section.previousVersions = section.previousVersions.slice(-5);
+          }
+        }
+        
+        // Accept the section
+        report.sections[i].aiLastTouched = false;
+        report.sections[i].lastUpdated = new Date();
+        
+        acceptedSections.push({
+          id: section.id,
+          templateSectionId: section.templateSectionId,
+          title: section.title
+        });
+      }
+    }
+    
+    // Save the report
+    await report.save();
+    
+    console.log(`[AcceptAll] Successfully accepted ${acceptedSections.length} sections`);
+    
+    res.status(200).json({
+      success: true,
+      message: `${acceptedSections.length} sections accepted successfully`,
+      acceptedSections
+    });
+    
+  } catch (error) {
+    console.error('[AcceptAll] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to accept all sections',
+      details: error.message
+    });
+  }
+}
+
 module.exports = {
   getTemplates,
   createProject,
   setupWebhook,
   getProjectById,
   deleteProject,
-  generateInitialReport
+  generateInitialReport,
+  regenerateSection,
+  revertSection,
+  acceptSection,
+  acceptAllSections
 };

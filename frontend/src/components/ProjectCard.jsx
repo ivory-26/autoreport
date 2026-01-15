@@ -69,7 +69,7 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1.5 overflow-hidden flex-1">
               <div className="flex items-center gap-2">
-                <CardTitle className="text-xl font-bold truncate leading-none tracking-tight">
+                <CardTitle className="text-xl font-bold truncate leading-tight tracking-tight py-1">
                   {project.name}
                 </CardTitle>
                 {isShared && (
