@@ -8,56 +8,138 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 export function ModeToggle() {
-  const { setTheme, theme } = useTheme()
+  const { setTheme, theme, resolvedTheme } = useTheme()
   const [isOpen, setIsOpen] = React.useState(false)
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const handleThemeChange = (newTheme) => {
     setTheme(newTheme)
     setIsOpen(false)
   }
 
+  // Optimized variants - focusing on opacity and scale which perform better than width
+  // We use the 'layout' prop on the motion component for smooth width transitions
+  const containerVariants = {
+    hidden: {
+      opacity: 0,
+      scale: 0.95,
+      filter: "blur(10px)",
+      transition: { duration: 0.2 }
+    },
+    visible: {
+      opacity: 1,
+      scale: 1,
+      filter: "blur(0px)",
+      transition: {
+        type: "spring",
+        stiffness: 350,
+        damping: 25,
+        mass: 1,
+        staggerChildren: 0.03
+      }
+    },
+    exit: {
+      opacity: 0,
+      scale: 0.95,
+      filter: "blur(5px)",
+      transition: { duration: 0.15 }
+    }
+  }
+
+  const itemVariants = {
+    hidden: { opacity: 0, scale: 0.8 },
+    visible: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.8 }
+  }
+
+  // Prevent hydration mismatch by defining effective theme only after mount
+  const effectiveTheme = mounted ? resolvedTheme : 'light'
+
   return (
     <div className="relative z-50 flex items-center">
-      <AnimatePresence>
+      <AnimatePresence mode="popLayout">
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, x: 20, width: 0 }}
-            animate={{ opacity: 1, x: 0, width: "auto" }}
-            exit={{ opacity: 0, x: 10, width: 0 }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className="flex items-center gap-1 overflow-hidden mr-2 bg-secondary/80 backdrop-blur-sm p-1 rounded-full border shadow-sm"
+            layout
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="flex items-center p-1 mr-2 bg-secondary/80 backdrop-blur-md rounded-full border shadow-sm overflow-hidden"
           >
-            <Button 
-                variant="ghost" 
-                size="icon" 
-                className={cn("h-8 w-8 rounded-full", theme === 'light' && "bg-background shadow-sm")}
-                onClick={() => handleThemeChange("light")}
-            >
-              <Sun className="h-4 w-4" />
-            </Button>
-            <Button 
-                variant="ghost" 
-                size="icon" 
-                className={cn("h-8 w-8 rounded-full", theme === 'dark' && "bg-background shadow-sm")}
-                onClick={() => handleThemeChange("dark")}
-            >
-              <Moon className="h-4 w-4" />
-            </Button>
-            <Button 
-                variant="ghost" 
-                size="icon" 
-                className={cn("h-8 w-8 rounded-full", theme === 'system' && "bg-background shadow-sm")}
-                onClick={() => handleThemeChange("system")}
-            >
-              <Laptop className="h-4 w-4" />
-            </Button>
+            {[
+              { id: 'light', icon: Sun, label: 'Light' },
+              { id: 'dark', icon: Moon, label: 'Dark' },
+              { id: 'system', icon: Laptop, label: 'System' }
+            ].map(({ id, icon: Icon, label }) => (
+              <motion.div key={id} variants={itemVariants} className="relative">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative z-10 h-8 w-8 rounded-full hover:bg-transparent bg-transparent text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => handleThemeChange(id)}
+                  title={label}
+                >
+                  {theme === id && (
+                    <motion.div
+                      layoutId="active-theme"
+                      className="absolute inset-0 bg-background rounded-full shadow-sm"
+                      transition={{
+                        type: "spring",
+                        stiffness: 400,
+                        damping: 30
+                      }}
+                    />
+                  )}
+                  <div className="relative z-10 flex items-center justify-center">
+                    <Icon className={cn("h-4 w-4", theme === id ? "text-foreground" : "")} />
+                  </div>
+                </Button>
+              </motion.div>
+            ))}
           </motion.div>
         )}
       </AnimatePresence>
 
-      <Button variant="ghost" size="icon" onClick={() => setIsOpen(!isOpen)} className="relative">
-        <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-        <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "relative h-9 w-9 rounded-full overflow-hidden transition-colors duration-300",
+          isOpen ? "bg-secondary" : "hover:bg-secondary/50"
+        )}
+      >
+        <div className="relative flex items-center justify-center w-full h-full">
+          <motion.div
+            initial={false}
+            animate={{
+              y: effectiveTheme === 'dark' ? -30 : 0,
+              opacity: effectiveTheme === 'dark' ? 0 : 1,
+              scale: effectiveTheme === 'dark' ? 0.5 : 1
+            }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            className="absolute flex items-center justify-center"
+          >
+            <Sun className="h-[1.2rem] w-[1.2rem]" />
+          </motion.div>
+          <motion.div
+            initial={false}
+            animate={{
+              y: effectiveTheme === 'dark' ? 0 : 30,
+              opacity: effectiveTheme === 'dark' ? 1 : 0,
+              scale: effectiveTheme === 'dark' ? 1 : 0.5
+            }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            className="absolute flex items-center justify-center"
+          >
+            <Moon className="h-[1.2rem] w-[1.2rem]" />
+          </motion.div>
+        </div>
         <span className="sr-only">Toggle theme</span>
       </Button>
     </div>
