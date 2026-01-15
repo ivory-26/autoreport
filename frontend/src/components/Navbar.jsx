@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ModeToggle } from '@/components/ui/mode-toggle';
+import { motion } from 'framer-motion';
 import { LayoutDashboard, LogOut, Settings, Github } from 'lucide-react';
 
 export function Navbar() {
@@ -23,25 +24,34 @@ export function Navbar() {
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
-        <div className="flex items-center gap-6">
-          {/* Logo */}
-          <Link href="/" className="flex items-center">
-            <span className="font-bold text-lg hidden sm:inline-block">AutoReport</span>
-          </Link>
-
-          {/* Navigation Links */}
+      <div className="mx-auto flex h-14 max-w-6xl items-center px-4 relative">
+        {/* Left: Navigation */}
+        <div className="flex items-center justify-start flex-1">
           {session && (
             <nav className="flex items-center space-x-4">
-              <Link href="/dashboard" className={`text-sm font-medium transition-colors hover:text-primary ${isActive('/dashboard') ? 'text-foreground' : 'text-muted-foreground'}`}>
+              <Link href="/dashboard" className={`relative text-sm font-medium transition-colors hover:text-primary ${isActive('/dashboard') ? 'text-foreground' : 'text-muted-foreground'}`}>
                  Dashboard
+                 {isActive('/dashboard') && (
+                    <motion.div
+                      layoutId="navbar-underline"
+                      className="absolute left-0 top-full h-[2px] w-full bg-primary"
+                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                    />
+                  )}
               </Link>
             </nav>
           )}
         </div>
 
+        {/* Center: Logo */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+          <Link href="/" className="flex items-center">
+            <span className="font-bold text-lg">AutoReport</span>
+          </Link>
+        </div>
 
-        <div className="flex items-center gap-2">
+        {/* Right: Actions */}
+        <div className="flex items-center justify-end flex-1 gap-2">
            <ModeToggle />
         {/* Auth Section */}
         {status === 'loading' ? (

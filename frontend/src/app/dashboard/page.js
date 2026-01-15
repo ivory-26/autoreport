@@ -4,16 +4,13 @@ import Link from 'next/link';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import { Project, Report } from '@/lib/models';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ProjectCard } from '@/components/ProjectCard';
 import { 
   FileText, 
-  GitBranch, 
-  Clock, 
-  Plus, 
-  ExternalLink,
-  ArrowRight 
+  Plus
 } from 'lucide-react';
 
 async function getProjects() {
@@ -80,109 +77,45 @@ export default async function DashboardPage() {
   const projects = await getProjects();
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 space-y-8">
+    <div className="mx-auto max-w-7xl px-4 py-8 space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground mt-1">
             Your projects and auto-generated reports
           </p>
         </div>
-        <Button className="gap-2" disabled>
+        <Button className="gap-2 rounded-xl shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5" disabled>
           <Plus className="h-4 w-4" />
           New Project
-          <Badge variant="outline" className="ml-1 text-xs">Soon</Badge>
+          <Badge variant="secondary" className="ml-1 text-[10px] h-5 bg-background/50 border shadow-none">Soon</Badge>
         </Button>
       </div>
 
       {/* Projects Grid */}
       {projects.length === 0 ? (
-        <Card className="border-dashed shadow-sm">
+        <Card className="border-dashed shadow-sm rounded-3xl bg-zinc-50/50 dark:bg-zinc-900/50">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <FileText className="h-12 w-12 text-muted-foreground mb-4" />
+            <div className="p-4 rounded-full bg-background shadow-sm mb-4 border">
+                <FileText className="h-8 w-8 text-muted-foreground" />
+            </div>
             <h3 className="text-lg font-semibold mb-2">No projects yet</h3>
-            <p className="text-muted-foreground max-w-sm">
+            <p className="text-muted-foreground max-w-sm mb-6">
               Create your first project to start generating reports automatically from your Git commits.
             </p>
+            <Button variant="outline" disabled className="rounded-xl border-dashed">Create Project</Button>
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {projects.map((project) => (
-            <Card key={project._id} className="hover:shadow-lg transition-all duration-300 border hover:border-primary/50 group">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <CardTitle className="text-lg truncate max-w-[150px] group-hover:text-primary transition-colors">{project.name}</CardTitle>
-                    <CardDescription className="flex items-center gap-1">
-                      <GitBranch className="h-3 w-3" />
-                      <span className="truncate max-w-[180px]">{project.repoFullName}</span>
-                    </CardDescription>
-                  </div>
-                  {project.report && (
-                    <Badge variant={getStatusColor(project.report.status)} className="shadow-sm">
-                      {project.report.status}
-                    </Badge>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Report Info */}
-                {project.report ? (
-                  <div className="space-y-2 text-sm bg-secondary/50 p-3 rounded-lg border border-secondary">
-                    <div className="flex items-center justify-between text-muted-foreground">
-                      <span className="flex items-center gap-1 font-medium">
-                        <FileText className="h-3.5 w-3.5" />
-                        {project.report.title}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-muted-foreground">
-                      <span className="flex items-center gap-1 text-xs">
-                        <Clock className="h-3.5 w-3.5" />
-                        Last updated
-                      </span>
-                      <span className="text-xs">{formatDate(project.report.updatedAt)}</span>
-                    </div>
-                    {project.report.metadata?.totalWordCount > 0 && (
-                      <div className="flex items-center justify-between text-muted-foreground pt-1 border-t border-dashed border-secondary-foreground/20">
-                        <span className="text-xs">Word count</span>
-                        <span className="text-xs font-mono">{project.report.metadata.totalWordCount.toLocaleString()}</span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground italic p-3 bg-secondary/30 rounded-lg text-center">
-                    No report generated yet. Push a commit to get started.
-                  </p>
-                )}
-
-                {/* Actions */}
-                <div className="flex gap-2 pt-2">
-                  {project.report ? (
-                    <Link href={`/project/${project.report._id}`} className="flex-1">
-                      <Button variant="default" className="w-full gap-2 shadow-md shadow-primary/20 hover:shadow-primary/40 transition-shadow">
-                        View Report
-                        <ArrowRight className="h-4 w-4" />
-                      </Button>
-                    </Link>
-                  ) : (
-                    <Button variant="secondary" className="flex-1 opacity-50 cursor-not-allowed" disabled>
-                      Waiting for commits...
-                    </Button>
-                  )}
-                  <a 
-                    href={project.repoUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                  >
-                    <Button variant="outline" size="icon" className="hover:bg-secondary shadow-sm">
-                      <ExternalLink className="h-4 w-4" />
-                    </Button>
-                  </a>
-                </div>
-              </CardContent>
-            </Card>
+            <ProjectCard 
+                key={project._id} 
+                project={project} 
+                statusColor={getStatusColor(project.report?.status)}
+                formattedDate={formatDate(project.report?.updatedAt)}
+            />
           ))}
         </div>
       )}
