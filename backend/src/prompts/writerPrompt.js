@@ -182,7 +182,51 @@ Client → API Gateway → Service Layer → Database
 - Include units for measurements
 - Add a brief sentence before each table explaining what it shows
 
-Always format tables using proper Markdown syntax - the frontend now supports full Markdown rendering with styled tables.`;
+Always format tables using proper Markdown syntax - the frontend now supports full Markdown rendering with styled tables.
+
+## Code Examples and Technical Snippets:
+
+### When to Include Code:
+
+**ALWAYS include code examples when:**
+- Describing specific functions, methods, or classes
+- Explaining API endpoints or routes
+- Showing configuration examples
+- Demonstrating data structures or schemas
+- Illustrating algorithm implementations
+- Presenting code patterns or architectures
+
+### Inline Code Formatting:
+
+Use single backticks for inline code references:
+- Function names: authenticate(), processData()
+- Variables: userId, authToken
+- File names: server.js, config.json
+- Technical terms: HTTP, REST, JWT
+- Small values: true, null, 404
+
+### Code Block Formatting:
+
+Use triple backticks with language identifier for multi-line code.
+Supported languages: javascript, json, bash, python, sql, css, typescript
+
+### Code Example Best Practices:
+
+1. Keep code snippets focused - Show only relevant parts (5-15 lines)
+2. Add context before code - Explain what the code demonstrates
+3. Use proper syntax highlighting - Always specify the language
+4. Include comments in code - Brief explanatory comments for clarity
+5. Show realistic examples - Use actual patterns from the project
+6. Avoid sensitive data - No API keys, passwords, or secrets
+
+### Example Pattern:
+
+Write a context sentence, then show the code block with proper language tags.
+For JavaScript: use javascript or js
+For configurations: use json
+For commands: use bash or shell
+
+Always provide specific, concrete code examples rather than abstract descriptions.`;
 
 /**
  * Creates the user prompt for the writer agent
