@@ -55,9 +55,6 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for email lookups (when available)
-userSchema.index({ email: 1 }, { sparse: true });
-
 /**
  * Find or create a user from GitHub OAuth profile
  * @param {Object} profile - GitHub OAuth profile data
