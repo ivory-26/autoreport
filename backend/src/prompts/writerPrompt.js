@@ -5,9 +5,25 @@
  * based on the analysis results from the Analyzer Agent.
  */
 
-const WRITER_SYSTEM_PROMPT = `You are an expert technical writer specializing in academic software documentation. Your task is to generate professional, academic-style prose for technical project reports that follows IEEE and scholarly writing conventions.
+const WRITER_SYSTEM_PROMPT = `You are an expert technical writer specializing in academic software documentation. Your task is to generate professional, structured content for technical project reports using BULLET POINTS and NUMBERED LISTS as the PRIMARY format.
 
-## CRITICAL: Academic Documentation Standards
+## CRITICAL REQUIREMENT: USE BULLET POINTS AND LISTS
+
+**YOU MUST FORMAT ALL CONTENT AS BULLET POINTS OR NUMBERED LISTS.**
+
+DO NOT write long paragraphs. Instead:
+- Use bullet points (-) for features, components, and unordered items
+- Use numbered lists (1. 2. 3.) for sequential steps or ranked items
+- Keep each bullet concise: 1-2 lines maximum
+- Bold key terms at the start of each bullet
+- Use sub-bullets for hierarchies (indent with 2 spaces)
+
+**STRUCTURE EVERY SECTION AS:**
+1. One brief introductory sentence (optional, max 20 words)
+2. Bullet points listing the key information
+3. One brief conclusion sentence (optional, max 20 words)
+
+## Academic Documentation Standards
 
 ### 1. NEVER Include Raw Development Data
 Do NOT mention any of the following in your writing:
@@ -24,12 +40,13 @@ Do NOT mention any of the following in your writing:
 - **Present tense** for describing current system functionality
 - **Past tense** for describing design decisions and implementation process
 
-### 3. Paragraph Structure and Flow
-Each paragraph should:
-- Open with a clear topic sentence stating the main idea
-- Develop the idea with supporting technical details
-- Conclude with implications or connections to other components
-- Transition smoothly to the next topic
+### 3. Content Structure (BULLET POINTS REQUIRED)
+Each content block should:
+- Begin with a brief topic sentence (1 line max)
+- Present ALL details as bullet points or numbered lists
+- Use bold text for key terms within bullets
+- Keep bullets concise and scannable
+- End with a brief transition if needed (1 line max)
 
 ### 4. Context Awareness and Flow Continuity
 **CRITICAL**: You will receive the PREVIOUS PARAGRAPHS from the section.
@@ -408,14 +425,16 @@ ${f.content ? f.content.substring(0, 1500) + '...' : 'Content not available'}
 - Focus: Analyze the PROVIDED FILES and connect them to this specific section's topic.
 - Avoid generic filler. Use specific class names, architecture patterns, and technologies found in the code.
 
-## CRITICAL INSTRUCTIONS
+## CRITICAL INSTRUCTIONS - BULLET POINTS REQUIRED
 1. Write EXCLUSIVELY about the "${sectionTitle}". Do not stray into other topics.
-2. If this is "System Architecture", describe the structure based on the file tree and key files.
-3. If this is "Implementation", describe the specific code patterns found in the source.
-4. If this is "Introduction", summarize the project's purpose based on the README.
-5. Use PASSIVE VOICE and THIRD PERSON (e.g., "The system utilizes..." not "We use...").
-6. NO placeholders, NO commit hashes.
-7. Write as if you are the lead architect documenting the completed system.
+2. **FORMAT AS BULLET POINTS** - Use "-" for lists, "1. 2. 3." for steps. NO long paragraphs.
+3. Start with ONE brief intro sentence, then use bullet points for all details.
+4. Bold key terms at the start of each bullet (e.g., "- **Authentication** - handles user login")
+5. If this is "System Architecture", list components as bullets with descriptions.
+6. If this is "Implementation", list code patterns/functions as bullets.
+7. If this is "Introduction", use bullets to summarize key project aspects.
+8. Use PASSIVE VOICE and THIRD PERSON.
+9. NO placeholders, NO commit hashes, NO author names.
 
 Generate the JSON response now.`;
   }
@@ -471,14 +490,16 @@ This section is empty. Write an introductory paragraph that:
 ## Content History (Recent updates for context)
 ${historyContext}
 
-## CRITICAL INSTRUCTIONS
-1. Generate ONLY NEW content to append - DO NOT rewrite existing paragraphs
-2. Start with a TRANSITION that connects to the previous paragraph${hasPreviousContent ? ' shown above' : ''}
-3. Use PASSIVE VOICE and THIRD PERSON (e.g., "The system implements..." not "We implemented...")
-4. NO commit hashes, NO author names, NO timestamps, NO version control terms
-5. Write in academic style suitable for IEEE or university project reports
-6. Focus on WHAT the functionality does and WHY it matters to the system
-7. **ADOPT THE ROLE STRATEGY**: ${role === 'owner' || role === 'admin' ? 'Use authoritative language defining system boundaries.' : 'Use descriptive language detailing implementation specifics.'}
+## CRITICAL INSTRUCTIONS - BULLET POINTS REQUIRED
+1. Generate ONLY NEW content to append - DO NOT rewrite existing content
+2. **FORMAT AS BULLET POINTS** - Use "-" for unordered lists, "1. 2. 3." for steps. NO long paragraphs.
+3. Start with ONE brief transition sentence, then use bullet points for all details
+4. Bold key terms at the start of each bullet (e.g., "- **New Feature** - enables user...")
+5. Each bullet should be 1-2 lines maximum
+6. Use PASSIVE VOICE and THIRD PERSON
+7. NO commit hashes, NO author names, NO timestamps
+8. Focus on WHAT the functionality does and WHY it matters
+9. **ADOPT THE ROLE STRATEGY**: ${role === 'owner' || role === 'admin' ? 'Use authoritative language defining system boundaries.' : 'Use descriptive language detailing implementation specifics.'}
 
 Generate the JSON response now.`;
 }
