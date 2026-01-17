@@ -393,12 +393,10 @@ function SuccessStep({ createdProject, onClose, generationProgress }) {
               </div>
               <div className="text-left text-sm w-full">
                 <p className="font-medium text-sm text-blue-600 dark:text-blue-400">
-                  {generationProgress?.stage
-                    ? `Generating Report: ${generationProgress.stage.charAt(0).toUpperCase() + generationProgress.stage.slice(1)}`
-                    : 'Generating Initial Report'}
+                  Your report is being generated
                 </p>
                 <p className="text-muted-foreground text-xs mt-0.5">
-                  {generationProgress?.message || 'Analyzing your repository and generating content. This can take several minutes. You will receive a browser notification when it is complete.'}
+                  You will receive a notification as a GitHub issue with your project link once the report is ready.
                 </p>
                 {generationProgress?.percent > 0 && (
                   <div className="w-full bg-blue-100 dark:bg-blue-900 h-1.5 rounded-full mt-2 overflow-hidden">

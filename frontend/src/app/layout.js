@@ -17,6 +17,49 @@ const geistMono = Geist_Mono({
 export const metadata = {
   title: "AutoReport - Zero-Click Documentation",
   description: "Autonomous project documentation from Git commits. Let AI write your reports while you code.",
+  keywords: ["documentation", "AI", "automation", "git", "reports", "software", "developer tools"],
+  authors: [{ name: "AutoReport Team" }],
+  
+  // Favicon
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/favicon.png",
+  },
+  
+  // Open Graph (Facebook, LinkedIn, WhatsApp, Discord, etc.)
+  openGraph: {
+    title: "AutoReport - Zero-Click Documentation",
+    description: "Autonomous project documentation from Git commits. Let AI write your reports while you code.",
+    url: "https://autoreport-five.vercel.app",
+    siteName: "AutoReport",
+    images: [
+      {
+        url: "/banner.jpeg",
+        width: 1200,
+        height: 630,
+        alt: "AutoReport - AI-Powered Documentation",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  
+  // Twitter Card
+  twitter: {
+    card: "summary_large_image",
+    title: "AutoReport - Zero-Click Documentation",
+    description: "Autonomous project documentation from Git commits. Let AI write your reports while you code.",
+    images: ["/banner.jpeg"],
+  },
+  
+  // Additional metadata
+  robots: {
+    index: true,
+    follow: true,
+  },
+  
+  metadataBase: new URL("https://autoreport-five.vercel.app"),
 };
 
 export default function RootLayout({ children }) {

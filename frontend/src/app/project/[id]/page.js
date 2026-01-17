@@ -7,11 +7,11 @@ import { Report, Project, AutoLog } from '@/lib/models';
 import { ProjectTabs } from '@/components/ProjectTabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ExportDropdown } from '@/components/ExportDropdown';
 import { 
   ArrowLeft, 
   GitBranch, 
-  ExternalLink, 
-  Download
+  ExternalLink
 } from 'lucide-react';
 
 async function getReportData(id) {
@@ -105,11 +105,7 @@ export default async function ProjectPage({ params }) {
         </div>
 
         <div className="flex gap-3 ml-12 md:ml-0">
-          <Button variant="outline" disabled className="gap-2 shadow-sm">
-            <Download className="h-4 w-4" />
-            <span className="hidden sm:inline">Export PDF</span>
-            <Badge variant="secondary" className="text-[10px] px-1 h-4 min-w-0">Soon</Badge>
-          </Button>
+          <ExportDropdown report={report} />
         </div>
       </div>
 
