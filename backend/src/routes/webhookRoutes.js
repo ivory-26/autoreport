@@ -17,6 +17,7 @@ const {
   verifyAndRedeliverIfNeeded
 } = require('../controllers/webhookDeliveryController');
 const { validate, schemas } = require('../middleware/validators');
+const { webhookLimiter } = require('../middleware/rateLimiters');
 
 /**
  * POST /webhooks/github
@@ -29,7 +30,7 @@ const { validate, schemas } = require('../middleware/validators');
  * 
  * Body: GitHub push event payload
  */
-router.post('/github', handleGitHubWebhook);
+router.post('/github', webhookLimiter, handleGitHubWebhook);
 
 /**
  * GET /webhooks/github
@@ -87,6 +88,6 @@ router.post('/redeliver/:projectId', validate(schemas.redeliverWebhook), request
  * - autoRedeliver: Whether to auto-request redelivery (default: true)
  * - maxWaitTime: Max ms to wait for pending processing (default: 30000)
  */
-router.post('/verify-and-redeliver/:projectId', verifyAndRedeliverIfNeeded);
+router.post('/verify-and-redeliver/:projectId', validate(schemas.verifyAndRedeliver), verifyAndRedeliverIfNeeded);
 
 module.exports = router;

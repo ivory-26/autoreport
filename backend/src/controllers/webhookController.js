@@ -141,7 +141,6 @@ async function handleGitHubWebhook(req, res) {
         settings: project.settings
       },
       ...processedPayload,
-      ...processedPayload,
       receivedAt,
       deliveryId
     });

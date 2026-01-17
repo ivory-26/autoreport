@@ -47,7 +47,7 @@ app.use(mongoSanitize({
     replaceWith: '_'
 }));
 
-// 4. CORS (Strict in Production)
+// 5. CORS (Strict in Production)
 app.use(cors({
     origin: process.env.NODE_ENV === 'production' 
       ? process.env.FRONTEND_URL 
@@ -56,7 +56,7 @@ app.use(cors({
     credentials: true
 }));
 
-// 3. JSON Parser with raw body preservation for webhook signature verification
+// 6. JSON Parser with raw body preservation for webhook signature verification
 // For webhook routes, we need both raw body (for signature) and parsed JSON
 app.use('/webhooks/github', express.json({
     verify: (req, res, buf) => {
@@ -65,10 +65,10 @@ app.use('/webhooks/github', express.json({
     }
 }));
 
-// 4. Standard JSON Parser for other routes
+// 7. Standard JSON Parser for other routes
 app.use(express.json());
 
-// 5. Logger
+// 8. Logger
 app.use(morgan('dev'));
 
 // --- Routes ---

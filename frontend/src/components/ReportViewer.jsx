@@ -19,7 +19,9 @@ import {
   Loader2,
   Undo2,
   Check,
-  CheckCheck
+  CheckCheck,
+  Menu,
+  List
 } from 'lucide-react';
 
 // Helper to normalize GitHub URL (handles both HTTPS and git@ formats)
@@ -146,6 +148,8 @@ export function ReportViewer({ report: initialReport, onDismissHighlight, repoUr
   const [revertTooltips, setRevertTooltips] = useState(new Set());
   const [acceptingAll, setAcceptingAll] = useState(false);
   const [error, setError] = useState(null);
+  const [isOutlineOpen, setIsOutlineOpen] = useState(false);
+  const [expandedOutlineSections, setExpandedOutlineSections] = useState(new Set());
 
   // Count sections with new AI content
   const sectionsWithNewContent = report?.sections?.filter(s => s.aiLastTouched) || [];
@@ -366,6 +370,70 @@ export function ReportViewer({ report: initialReport, onDismissHighlight, repoUr
   const endIndex = startIndex + SECTIONS_PER_PAGE;
   const currentSections = sections.slice(startIndex, endIndex);
 
+  // Helper to navigate to a section (handles pagination)
+  const navigateToSection = (sectionId) => {
+    const sectionIndex = sections.findIndex(s => s.id === sectionId);
+    if (sectionIndex === -1) return;
+
+    const targetPage = Math.floor(sectionIndex / SECTIONS_PER_PAGE);
+    setCurrentPage(targetPage);
+
+    // Expand the section if it's collapsed
+    if (collapsedSections.has(sectionId)) {
+      setCollapsedSections(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(sectionId);
+        return newSet;
+      });
+    }
+
+    // Scroll to section after a small delay to allow page change
+    setTimeout(() => {
+      const element = document.getElementById(`section-${sectionId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+  };
+
+  // Toggle outline section expansion
+  const toggleOutlineSection = (sectionNumber) => {
+    setExpandedOutlineSections(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(sectionNumber)) {
+        newSet.delete(sectionNumber);
+      } else {
+        newSet.add(sectionNumber);
+      }
+      return newSet;
+    });
+  };
+
+  // Build outline structure (group subsections under parent sections)
+  const buildOutlineStructure = () => {
+    const structure = [];
+    let currentParent = null;
+
+    sections.forEach(section => {
+      const isSubSection = section.number.includes('.');
+      if (isSubSection) {
+        if (currentParent) {
+          if (!currentParent.subsections) {
+            currentParent.subsections = [];
+          }
+          currentParent.subsections.push(section);
+        }
+      } else {
+        currentParent = { ...section, subsections: [] };
+        structure.push(currentParent);
+      }
+    });
+
+    return structure;
+  };
+
+  const outlineStructure = buildOutlineStructure();
+
   return (
     <div className="w-full flex flex-col bg-muted/10 min-h-screen py-8 gap-6">
       {/* Error Message */}
@@ -378,180 +446,301 @@ export function ReportViewer({ report: initialReport, onDismissHighlight, repoUr
         </div>
       )}
 
-      {/* A4 Paper-like Container - Fixed Height */}
-      <div
-        className="w-full bg-card text-card-foreground shadow-xl rounded-xl border min-h-[800px] flex flex-col relative overflow-hidden"
-      >
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-t-xl opacity-80" />
-
-        {/* Header */}
-        <div className="px-8 pt-16 pb-6 space-y-3 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <h1
-              className="text-3xl font-bold tracking-tight text-foreground/90 leading-tight py-1"
-              style={{ fontFamily: "'Times New Roman', Times, serif" }}
-            >
-              {report.title}
-            </h1>
-            <Badge variant={report.status === 'final' ? 'default' : 'secondary'} className="uppercase tracking-wider text-[10px]">
-              {report.status}
-            </Badge>
-          </div>
-
-          <div className="flex items-center gap-4 text-xs text-muted-foreground font-medium">
-            <div className="flex items-center gap-2">
-              <span className="uppercase tracking-wider opacity-70">Template</span>
-              <span>{report.templateId}</span>
+      {/* Main Container with Outline Sidebar */}
+      <div className="relative flex gap-4 w-full items-start">
+        {/* Outline Sidebar - Dynamic Height */}
+        <div
+          className={`flex-shrink-0 transition-all duration-300 ease-in-out ${isOutlineOpen ? 'w-80 opacity-100' : 'w-0 opacity-0 overflow-hidden'
+            }`}
+          style={{ maxHeight: 'calc(100vh - 12rem)' }}
+        >
+          <div className="bg-card shadow-lg rounded-xl border overflow-hidden flex flex-col h-full">
+            {/* Outline Header */}
+            <div className="p-5 border-b bg-muted/20 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <List className="h-5 w-5 text-primary" />
+                <h3 className="font-semibold text-base">Outline</h3>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setIsOutlineOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </div>
-            {report.metadata?.totalWordCount > 0 && (
-              <div className="flex items-center gap-2">
-                <div className="h-1 w-1 rounded-full bg-muted-foreground/50" />
-                <span>{report.metadata.totalWordCount.toLocaleString()} words</span>
-              </div>
-            )}
-            {report.metadata?.version && (
-              <div className="flex items-center gap-2">
-                <div className="h-1 w-1 rounded-full bg-muted-foreground/50" />
-                <span>v{report.metadata.version}</span>
-              </div>
-            )}
+
+            {/* Outline Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {outlineStructure.map((section, index) => {
+                const hasSubsections = section.subsections && section.subsections.length > 0;
+                const isExpanded = expandedOutlineSections.has(section.number);
+                const isLastItem = index === outlineStructure.length - 1;
+
+                return (
+                  <div key={section.id} className={isLastItem ? 'pb-2' : ''}>
+                    {/* Parent Section */}
+                    <div
+                      className="flex items-center gap-1 group rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
+                    >
+                      {hasSubsections && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleOutlineSection(section.number);
+                          }}
+                          className="p-1 hover:bg-muted rounded transition-all"
+                        >
+                          <ChevronRight
+                            className={`h-3 w-3 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''
+                              }`}
+                          />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => navigateToSection(section.id)}
+                        className={`flex-1 text-left px-3 py-2 rounded-lg transition-colors ${!hasSubsections ? 'ml-7' : ''
+                          }`}
+                      >
+                        <span className="text-muted-foreground/60 text-sm mr-2.5 font-mono">
+                          {section.number}
+                        </span>
+                        <span className="text-foreground/85 font-medium text-sm leading-relaxed">
+                          {section.title}
+                        </span>
+                        {section.aiLastTouched && (
+                          <span className="ml-2 inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Subsections */}
+                    {hasSubsections && isExpanded && (
+                      <div className="ml-5 mt-1.5 space-y-1 border-l-2 border-muted pl-3">
+                        {section.subsections.map((subsection, subIndex) => {
+                          const isLastSubItem = subIndex === section.subsections.length - 1;
+                          return (
+                            <button
+                              key={subsection.id}
+                              onClick={() => navigateToSection(subsection.id)}
+                              className={`w-full text-left px-3 py-1.5 rounded-lg hover:bg-muted/50 transition-colors group ${isLastSubItem ? 'mb-1' : ''
+                                }`}
+                            >
+                              <span className="text-muted-foreground/60 mr-2.5 text-sm font-mono">
+                                {subsection.number}
+                              </span>
+                              <span className="text-foreground/75 text-sm leading-relaxed">
+                                {subsection.title}
+                              </span>
+                              {subsection.aiLastTouched && (
+                                <span className="ml-2 inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
-        {/* Accept All Button - Show when there are sections with new content */}
-        {sectionsWithNewContent.length > 0 && (
-          <div className="px-12 pb-3 flex-shrink-0">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                <span>{sectionsWithNewContent.length} section{sectionsWithNewContent.length > 1 ? 's' : ''} with new AI content</span>
+        {/* Report Content - Adjusted width when outline is open */}
+        <div className={`flex-1 transition-all duration-300 ${isOutlineOpen ? 'max-w-[calc(100%-21rem)]' : 'max-w-full'}`}>
+          {/* A4 Paper-like Container - Fixed Height */}
+          <div
+            className="w-full bg-card text-card-foreground shadow-xl rounded-xl border min-h-[800px] flex flex-col relative overflow-hidden"
+          >
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-t-xl opacity-80" />
+
+            {/* Outline Toggle Button - Fixed Position on Left */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-4 left-4 z-20 h-9 w-9 rounded-full shadow-md bg-background/80 backdrop-blur-sm hover:bg-background border"
+              onClick={() => setIsOutlineOpen(!isOutlineOpen)}
+              title="Toggle Outline"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+
+            {/* Header */}
+            <div className="px-8 pt-16 pb-6 space-y-3 flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <h1
+                  className="text-3xl font-bold tracking-tight text-foreground/90 leading-tight py-1"
+                  style={{ fontFamily: "'Times New Roman', Times, serif" }}
+                >
+                  {report.title}
+                </h1>
+                <Badge variant={report.status === 'final' ? 'default' : 'secondary'} className="uppercase tracking-wider text-[10px]">
+                  {report.status}
+                </Badge>
               </div>
+
+              <div className="flex items-center gap-4 text-xs text-muted-foreground font-medium">
+                <div className="flex items-center gap-2">
+                  <span className="uppercase tracking-wider opacity-70">Template</span>
+                  <span>{report.templateId}</span>
+                </div>
+                {report.metadata?.totalWordCount > 0 && (
+                  <div className="flex items-center gap-2">
+                    <div className="h-1 w-1 rounded-full bg-muted-foreground/50" />
+                    <span>{report.metadata.totalWordCount.toLocaleString()} words</span>
+                  </div>
+                )}
+                {report.metadata?.version && (
+                  <div className="flex items-center gap-2">
+                    <div className="h-1 w-1 rounded-full bg-muted-foreground/50" />
+                    <span>v{report.metadata.version}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Accept All Button - Show when there are sections with new content */}
+            {sectionsWithNewContent.length > 0 && (
+              <div className="px-12 pb-3 flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                    <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                    <span>{sectionsWithNewContent.length} section{sectionsWithNewContent.length > 1 ? 's' : ''} with new AI content</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 text-green-600 border-green-200 hover:bg-green-50 hover:text-green-700 dark:text-green-400 dark:border-green-800 dark:hover:bg-green-950"
+                    onClick={handleAcceptAll}
+                    disabled={acceptingAll}
+                  >
+                    {acceptingAll ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCheck className="h-4 w-4" />
+                    )}
+                    Accept All
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="px-12 pb-3 flex-shrink-0">
+              <Separator />
+            </div>
+
+            {/* Sections - Scrollable Content Area */}
+            <div className="px-8 py-6 space-y-6 flex-1 overflow-y-auto">
+              {currentSections.map((section) => {
+                const isCollapsed = collapsedSections.has(section.id);
+                const isSubSection = section.number.includes('.');
+                const isRegenerating = regeneratingSections.has(section.templateSectionId);
+
+                return (
+                  <div
+                    key={section.id}
+                    id={`section-${section.id}`}
+                    className={`${isSubSection ? 'ml-6 mt-3' : 'mt-6'}`}
+                  >
+                    {/* Section Header */}
+                    <div
+                      className="group flex items-center gap-2 w-full text-left py-1 mb-2 rounded hover:bg-muted/30 cursor-pointer -ml-2 pl-2 transition-colors relative"
+                      onClick={() => toggleSection(section.id)}
+                    >
+                      <div className={`p-1 rounded-md text-muted-foreground group-hover:bg-muted/50 transition-all ${isCollapsed ? '-rotate-90' : 'rotate-0'} duration-200`}>
+                        <ChevronDown className="h-4 w-4" />
+                      </div>
+
+                      <span className={`font-semibold text-foreground/80 ${isSubSection ? 'text-base' : 'text-lg'}`}>
+                        <span className="text-muted-foreground/60 mr-2 font-normal">{section.number}</span>
+                        {section.title}
+                      </span>
+
+                      {/* Indicators */}
+                      {section.aiLastTouched && (
+                        <span className="ml-2 h-2 w-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]" title="New AI content" />
+                      )}
+                      {isRegenerating && (
+                        <Loader2 className="ml-2 h-4 w-4 animate-spin text-blue-500" />
+                      )}
+                    </div>
+
+                    {/* Section Content */}
+                    <div className={`transition-all duration-300 ease-in-out origin-top ${isCollapsed ? 'h-0 opacity-0 overflow-hidden' : 'opacity-100'}`}>
+                      <SectionContent
+                        section={section}
+                        onDismissHighlight={onDismissHighlight}
+                        onRegenerate={handleRegenerate}
+                        onRevert={handleRevert}
+                        onAccept={handleAccept}
+                        repoUrl={repoUrl}
+                        projectId={projectId || report.projectId}
+                        isRegenerating={isRegenerating}
+                        revertTooltip={revertTooltips.has(section.templateSectionId)}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer with Page Number */}
+            <div className="px-8 py-4 border-t bg-muted/5 rounded-b-xl flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground font-medium tracking-wide opacity-50">
+                  AUTOREPORT • {new Date().getFullYear()}
+                </p>
+                <p className="text-xs text-muted-foreground font-mono">
+                  Page {currentPage + 1} of {totalPages}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-6">
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-2 text-green-600 border-green-200 hover:bg-green-50 hover:text-green-700 dark:text-green-400 dark:border-green-800 dark:hover:bg-green-950"
-                onClick={handleAcceptAll}
-                disabled={acceptingAll}
+                onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
+                disabled={currentPage === 0}
+                className="gap-2"
               >
-                {acceptingAll ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <CheckCheck className="h-4 w-4" />
-                )}
-                Accept All
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => (
+                  <Button
+                    key={i}
+                    variant={currentPage === i ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setCurrentPage(i)}
+                    className="w-8 h-8 p-0"
+                  >
+                    {i + 1}
+                  </Button>
+                ))}
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages - 1, prev + 1))}
+                disabled={currentPage === totalPages - 1}
+                className="gap-2"
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
-          </div>
-        )}
-
-        <div className="px-12 pb-3 flex-shrink-0">
-          <Separator />
-        </div>
-
-        {/* Sections - Scrollable Content Area */}
-        <div className="px-8 py-6 space-y-6 flex-1 overflow-y-auto">
-          {currentSections.map((section) => {
-            const isCollapsed = collapsedSections.has(section.id);
-            const isSubSection = section.number.includes('.');
-            const isRegenerating = regeneratingSections.has(section.templateSectionId);
-
-            return (
-              <div key={section.id} className={`${isSubSection ? 'ml-6 mt-3' : 'mt-6'}`}>
-                {/* Section Header */}
-                <div
-                  className="group flex items-center gap-2 w-full text-left py-1 mb-2 rounded hover:bg-muted/30 cursor-pointer -ml-2 pl-2 transition-colors relative"
-                  onClick={() => toggleSection(section.id)}
-                >
-                  <div className={`p-1 rounded-md text-muted-foreground group-hover:bg-muted/50 transition-all ${isCollapsed ? '-rotate-90' : 'rotate-0'} duration-200`}>
-                    <ChevronDown className="h-4 w-4" />
-                  </div>
-
-                  <span className={`font-semibold text-foreground/80 ${isSubSection ? 'text-base' : 'text-lg'}`}>
-                    <span className="text-muted-foreground/60 mr-2 font-normal">{section.number}</span>
-                    {section.title}
-                  </span>
-
-                  {/* Indicators */}
-                  {section.aiLastTouched && (
-                    <span className="ml-2 h-2 w-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]" title="New AI content" />
-                  )}
-                  {isRegenerating && (
-                    <Loader2 className="ml-2 h-4 w-4 animate-spin text-blue-500" />
-                  )}
-                </div>
-
-                {/* Section Content */}
-                <div className={`transition-all duration-300 ease-in-out origin-top ${isCollapsed ? 'h-0 opacity-0 overflow-hidden' : 'opacity-100'}`}>
-                  <SectionContent
-                    section={section}
-                    onDismissHighlight={onDismissHighlight}
-                    onRegenerate={handleRegenerate}
-                    onRevert={handleRevert}
-                    onAccept={handleAccept}
-                    repoUrl={repoUrl}
-                    projectId={projectId || report.projectId}
-                    isRegenerating={isRegenerating}
-                    revertTooltip={revertTooltips.has(section.templateSectionId)}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Footer with Page Number */}
-        <div className="px-8 py-4 border-t bg-muted/5 rounded-b-xl flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground font-medium tracking-wide opacity-50">
-              AUTOREPORT • {new Date().getFullYear()}
-            </p>
-            <p className="text-xs text-muted-foreground font-mono">
-              Page {currentPage + 1} of {totalPages}
-            </p>
-          </div>
+          )}
         </div>
       </div>
-
-      {/* Pagination Controls */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
-            disabled={currentPage === 0}
-            className="gap-2"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Previous
-          </Button>
-
-          <div className="flex items-center gap-1">
-            {Array.from({ length: totalPages }, (_, i) => (
-              <Button
-                key={i}
-                variant={currentPage === i ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setCurrentPage(i)}
-                className="w-8 h-8 p-0"
-              >
-                {i + 1}
-              </Button>
-            ))}
-          </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCurrentPage(prev => Math.min(totalPages - 1, prev + 1))}
-            disabled={currentPage === totalPages - 1}
-            className="gap-2"
-          >
-            Next
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

@@ -21,6 +21,14 @@ const redeliverWebhookSchema = z.object({
   hookId: z.number().optional()
 });
 
+// Schema for Verify and Auto-Redeliver
+const verifyAndRedeliverSchema = z.object({
+  accessToken: z.string().min(1, 'GitHub Access Token is required'),
+  commitHash: z.string().optional(),
+  autoRedeliver: z.boolean().optional(),
+  maxWaitTime: z.number().max(60000).optional() // Max 60 seconds
+});
+
 // Generic validator middleware factory
 exports.validate = (schema) => (req, res, next) => {
   try {
@@ -45,5 +53,6 @@ exports.validate = (schema) => (req, res, next) => {
 exports.schemas = {
   createProject: createProjectSchema,
   verifyWebhook: verifyWebhookSchema,
-  redeliverWebhook: redeliverWebhookSchema
+  redeliverWebhook: redeliverWebhookSchema,
+  verifyAndRedeliver: verifyAndRedeliverSchema
 };

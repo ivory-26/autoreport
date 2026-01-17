@@ -48,11 +48,12 @@ async function streamJobProgress(req, res) {
   res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
   
   // Send initial connection message
+  const totalJobs = webhookQueue.length;
   res.write(`data: ${JSON.stringify({ 
     type: 'connected', 
     jobId, 
     status: job.status,
-    queuePosition: webhookQueue.queue.findIndex(j => j.id === jobId) + 1,
+    queueSize: totalJobs,
     timestamp: new Date().toISOString()
   })}\n\n`);
 
@@ -99,7 +100,8 @@ async function getJobStatus(req, res) {
   // Calculate queue position if still pending
   let queuePosition = null;
   if (job.status === JOB_STATUS.PENDING || job.status === JOB_STATUS.PROCESSING) {
-    queuePosition = webhookQueue.queue.findIndex(j => j.id === jobId) + 1;
+    // Queue position is approximate since we use fair queueing per user
+    queuePosition = webhookQueue.length;  
   }
 
   res.json({
