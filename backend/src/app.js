@@ -14,6 +14,10 @@ const { seedTemplates } = require('./seeds/templates');
 
 const app = express();
 
+// Trust proxy - Required for Render/Heroku/Vercel deployments
+// This allows rate limiting to work correctly behind reverse proxies
+app.set('trust proxy', 1);
+
 // --- Middleware ---
 
 // 1. Security Headers
