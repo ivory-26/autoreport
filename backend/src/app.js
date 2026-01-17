@@ -24,14 +24,17 @@ const { globalLimiter } = require('./middleware/rateLimiters');
 app.use(globalLimiter);
 
 // 3. NoSQL Injection Prevention
+// NOTE: express-mongo-sanitize is currently incompatible with Express 5.x
+// It tries to set req.query which is a read-only getter in Express 5
+// Our Zod validation provides similar protection for now
+// TODO: Re-enable when library releases Express 5 compatible version
+/*
 const mongoSanitize = require('express-mongo-sanitize');
-// Express 5.x compatibility: req.query is a getter. 
-// We sanitize body/params/headers which are generally safe to modify.
 app.use(mongoSanitize({
     allowDots: true,
-    replaceWith: '_',
-    dryRun: false // Ensure it actually runs
+    replaceWith: '_'
 }));
+*/
 
 // 4. CORS (Strict in Production)
 app.use(cors({
