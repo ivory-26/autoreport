@@ -42,6 +42,7 @@ class AutoLogger {
    * @param {string} params.commitHash - Commit hash
    * @param {string} params.commitMessage - Commit message
    * @param {string} params.author - Commit author
+   * @param {Object} params.authorInfo - Extended author information
    * @param {Object} params.result - Processing result
    * @param {Object} params.pipelineTrace - Timing information
    * @param {Object} params.analysisResult - Analysis summary
@@ -53,6 +54,7 @@ class AutoLogger {
     commitHash,
     commitMessage,
     author,
+    authorInfo,
     result,
     pipelineTrace,
     analysisResult,
@@ -67,6 +69,7 @@ class AutoLogger {
         commitHash,
         commitMessage,
         author,
+        authorInfo: authorInfo || undefined,
         deliveryId,
         addedToSection: result.sectionTitle,
         sectionId: result.sectionId,
@@ -101,6 +104,7 @@ class AutoLogger {
    * @param {string} params.commitHash - Commit hash
    * @param {string} params.commitMessage - Commit message
    * @param {string} params.author - Commit author
+   * @param {Object} params.authorInfo - Extended author information
    * @param {string} params.stage - Pipeline stage where error occurred
    * @param {Error} params.error - The error object
    * @param {Object} params.pipelineTrace - Timing information
@@ -111,6 +115,7 @@ class AutoLogger {
     commitHash,
     commitMessage,
     author,
+    authorInfo,
     stage,
     error,
     pipelineTrace,
@@ -125,6 +130,7 @@ class AutoLogger {
         commitHash,
         commitMessage,
         author,
+        authorInfo: authorInfo || undefined,
         deliveryId,
         processingTime,
         status: 'failed',
@@ -206,6 +212,7 @@ class AutoLogger {
    * @param {string} params.commitHash - Commit hash
    * @param {string} params.commitMessage - Commit message
    * @param {string} params.author - Commit author
+   * @param {Object} params.authorInfo - Extended author information
    * @param {Array} params.successes - Successfully updated sections
    * @param {Array} params.failures - Failed sections with errors
    * @param {Object} params.pipelineTrace - Timing information
@@ -217,6 +224,7 @@ class AutoLogger {
     commitHash,
     commitMessage,
     author,
+    authorInfo,
     successes,
     failures,
     pipelineTrace,
@@ -231,6 +239,7 @@ class AutoLogger {
         commitHash,
         commitMessage,
         author,
+        authorInfo: authorInfo || undefined,
         deliveryId,
         addedToSection: successes.map(s => s.sectionTitle).join(', '),
         contentPreview: `${successes.length} sections updated, ${failures.length} failed`,

@@ -348,7 +348,11 @@ async function setupWebhook(req, res) {
 
     const webhookData = await response.json();
 
-    console.log(`[ProjectController] Webhook created for ${owner}/${repo}`);
+    console.log(`[ProjectController] Webhook created for ${owner}/${repo} (ID: ${webhookData.id})`);
+
+    // Save webhook ID to project
+    project.webhookId = webhookData.id.toString();
+    await project.save();
 
     res.status(201).json({
       success: true,
@@ -500,6 +504,7 @@ async function generateInitialReport(req, res) {
     // Enqueue the job and return 202 Accepted immediately
     const jobId = webhookQueue.enqueue({
       type: 'initial_report',
+      userId: project.owner, // For Fair Queueing
       projectId: project._id.toString(),
       reportId: report._id.toString(),
       templateId: template.templateId,

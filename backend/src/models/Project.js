@@ -31,6 +31,10 @@ const projectSchema = new mongoose.Schema({
     type: String,
     required: false
   },
+  webhookId: {
+    type: String,
+    required: false
+  },
   settings: {
     autoProcess: {
       type: Boolean,
@@ -75,6 +79,7 @@ const projectSchema = new mongoose.Schema({
       enum: ['viewer', 'editor', 'admin'],
       default: 'editor'
     },
+    avatarUrl: String,
     addedAt: {
       type: Date,
       default: Date.now

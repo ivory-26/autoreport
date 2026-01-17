@@ -29,25 +29,39 @@ export async function GET() {
 
     await dbConnect();
 
-    // Find pending invitations for this user
-    const invitations = await Invitation.find({
+    // Find pending invitations received by this user
+    const received = await Invitation.find({
       inviteeUsername: { $regex: new RegExp(`^${username}$`, 'i') },
       status: 'pending',
       expiresAt: { $gt: new Date() }
     }).sort({ createdAt: -1 }).lean();
 
+    // Find pending invitations sent by this user
+    const sent = await Invitation.find({
+      'invitedBy.username': { $regex: new RegExp(`^${username}$`, 'i') },
+      status: 'pending',
+      expiresAt: { $gt: new Date() }
+    }).sort({ createdAt: -1 }).lean();
+
+    const mapInvitation = (inv) => ({
+      id: inv._id.toString(),
+      projectId: inv.projectId.toString(),
+      projectName: inv.projectName,
+      invitedBy: inv.invitedBy.username,
+      inviteeUsername: inv.inviteeUsername,
+      role: inv.role,
+      message: inv.message,
+      createdAt: inv.createdAt,
+      expiresAt: inv.expiresAt,
+      status: inv.status
+    });
+
     return NextResponse.json({
       success: true,
-      invitations: invitations.map(inv => ({
-        id: inv._id.toString(),
-        projectId: inv.projectId.toString(),
-        projectName: inv.projectName,
-        invitedBy: inv.invitedBy.username,
-        role: inv.role,
-        message: inv.message,
-        createdAt: inv.createdAt,
-        expiresAt: inv.expiresAt
-      }))
+      received: received.map(mapInvitation),
+      sent: sent.map(mapInvitation),
+      // Backwards compatibility if needed, though we will update frontend
+      invitations: received.map(mapInvitation)
     });
 
   } catch (error) {

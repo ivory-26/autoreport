@@ -364,8 +364,8 @@ function SuccessStep({ createdProject, onClose, generationProgress }) {
   };
 
   const handleGoToDashboard = () => {
-    onClose();
     router.refresh();
+    onClose();
   };
 
   return (
@@ -488,6 +488,7 @@ function SuccessStep({ createdProject, onClose, generationProgress }) {
  * Main Setup Wizard Component
  */
 export function SetupWizard({ trigger }) {
+  const router = useRouter();
   const wizard = useProjectWizard();
   const steps = [
     { id: 'repo', title: 'Select Repository', icon: GitBranch },
@@ -506,7 +507,14 @@ export function SetupWizard({ trigger }) {
       </div>
 
       {/* Wizard Dialog */}
-      <Dialog open={wizard.isOpen} onOpenChange={(open) => !open && wizard.closeWizard()}>
+      <Dialog open={wizard.isOpen} onOpenChange={(open) => {
+        if (!open) {
+          if (wizard.step === 4) {
+            router.refresh();
+          }
+          wizard.closeWizard();
+        }
+      }}>
         <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

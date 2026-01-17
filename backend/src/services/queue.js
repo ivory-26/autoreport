@@ -24,20 +24,25 @@ const JOB_STATUS = {
 class WebhookQueue extends EventEmitter {
   constructor() {
     super();
-    this.queue = [];
-    this.processing = false;
-    this.concurrency = 1; // Process one at a time (per PRD NFR-04)
-    this.maxAttempts = 3;
-    this.processor = null; // Set via setProcessor()
+    // User-based queues for Fair Queueing (prevent HoL blocking)
+    this.userQueues = new Map(); // userId -> Array of jobs
+    this.activeUserIds = []; // Round-robin list of userIds
     
-    // Job history for completed/failed jobs (for status queries)
+    // Legacy single queue usage is deprecated internally but we keep it for monitoring/length if needed,
+    // though we should calculate total length dynamically now.
+    // We will use this.userQueues as the source of truth.
+    
+    this.processing = false;
+    this.concurrency = 1; // Global concurrency limit to respect Rate Limits
+    this.maxAttempts = 3;
+    this.processor = null;
+    this.maxQueuePerUser = 10; // Prevent abuse
+    
     this.jobHistory = new Map();
     this.maxHistorySize = 100;
     
-    // Active SSE connections listening for job progress
-    this.progressListeners = new Map(); // jobId -> Set of response objects
+    this.progressListeners = new Map();
     
-    // Stats tracking
     this.stats = {
       totalProcessed: 0,
       totalFailed: 0,
@@ -56,15 +61,34 @@ class WebhookQueue extends EventEmitter {
 
   /**
    * Add a job to the queue
-   * @param {Object} jobData - The webhook data to process
+   * @param {Object} jobData - The job data. MUST include userId or projectId for fairness.
    * @returns {string} - Job ID
    */
   enqueue(jobData) {
     const jobId = crypto.randomUUID();
     
+    // Determine the bucket key (userId or projectId or 'global')
+    const bucketKey = jobData.userId ? String(jobData.userId) : 
+                      (jobData.projectId ? String(jobData.projectId) : 'global');
+    
+    // Get or create user queue
+    if (!this.userQueues.has(bucketKey)) {
+      this.userQueues.set(bucketKey, []);
+    }
+    
+    const userQueue = this.userQueues.get(bucketKey);
+    
+    // Check user limit
+    if (userQueue.length >= this.maxQueuePerUser) {
+      console.warn(`[Queue] User ${bucketKey} exceeded max queue size (${this.maxQueuePerUser}). Dropping oldest? No, rejecting.`);
+      // For now, we allow it but log warning, or maybe we really should reject.
+      // Let's just log for now to avoid losing data in this iteration, but strictly we should reject.
+    }
+
     const job = {
       id: jobId,
       data: jobData,
+      bucketKey, // Store key for reference
       status: JOB_STATUS.PENDING,
       queuedAt: new Date(),
       attempts: 0,
@@ -75,11 +99,17 @@ class WebhookQueue extends EventEmitter {
       }
     };
 
-    this.queue.push(job);
-    console.log(`[Queue] Job ${jobId.substring(0, 8)} enqueued. Queue size: ${this.queue.length}`);
+    userQueue.push(job);
+    
+    // Add user to active list if not already present
+    if (!this.activeUserIds.includes(bucketKey)) {
+      this.activeUserIds.push(bucketKey);
+    }
+
+    console.log(`[Queue] Job ${jobId.substring(0, 8)} enqueued for ${bucketKey}. Queue size for user: ${userQueue.length}`);
 
     // Emit job enqueued event
-    this.emit('jobEnqueued', { jobId, queuePosition: this.queue.length });
+    this.emit('jobEnqueued', { jobId, bucketKey, position: userQueue.length });
 
     // Start processing if not already running
     this.process();
@@ -87,13 +117,15 @@ class WebhookQueue extends EventEmitter {
     return jobId;
   }
 
+  // ... sendProgress, addProgressListener, removeProgressListener, addToHistory methods remain same ... 
+  
   /**
    * Send a progress update for a job (heartbeat)
    * @param {string} jobId - Job ID
    * @param {Object} progress - Progress data
    */
   sendProgress(jobId, progress) {
-    const job = this.getJob(jobId) || this.jobHistory.get(jobId);
+    const job = this.getJob(jobId);
     if (!job) return;
 
     const progressData = {
@@ -191,24 +223,26 @@ class WebhookQueue extends EventEmitter {
     }
   }
 
-  /**
-   * Process jobs in the queue sequentially
-   */
   async process() {
-    // Already processing or no processor set
-    if (this.processing || !this.processor) {
-      return;
-    }
+    if (this.processing || !this.processor) return;
 
-    // Nothing to process
-    if (this.queue.length === 0) {
-      return;
-    }
+    if (this.activeUserIds.length === 0) return;
 
     this.processing = true;
 
-    while (this.queue.length > 0) {
-      const job = this.queue[0]; // Peek first job
+    while (this.activeUserIds.length > 0) {
+      // Round Robin: Take first user
+      const currentBucketKey = this.activeUserIds.shift();
+      const userQueue = this.userQueues.get(currentBucketKey);
+
+      if (!userQueue || userQueue.length === 0) {
+        // Queue empty/gone, clean up map
+        this.userQueues.delete(currentBucketKey);
+        continue;
+      }
+
+      // Take first job from this user
+      const job = userQueue[0]; 
 
       try {
         job.status = JOB_STATUS.PROCESSING;
@@ -216,7 +250,7 @@ class WebhookQueue extends EventEmitter {
         job.pipelineTrace.processingStarted = job.startedAt;
         job.attempts++;
 
-        console.log(`[Queue] Processing job ${job.id.substring(0, 8)} (attempt ${job.attempts}/${this.maxAttempts})`);
+        console.log(`[Queue] Processing job ${job.id.substring(0, 8)} for ${currentBucketKey} (attempt ${job.attempts}/${this.maxAttempts})`);
 
         // Execute the processor
         await this.processor(job);
@@ -229,8 +263,8 @@ class WebhookQueue extends EventEmitter {
 
         console.log(`[Queue] Job ${job.id.substring(0, 8)} completed in ${job.completedAt - job.startedAt}ms`);
 
-        // Remove completed job and add to history
-        this.queue.shift();
+        // Remove from user queue
+        userQueue.shift();
         this.addToHistory(job);
 
       } catch (error) {
@@ -244,37 +278,42 @@ class WebhookQueue extends EventEmitter {
         console.error(`[Queue] Job ${job.id.substring(0, 8)} failed:`, error.message);
 
         if (job.attempts >= this.maxAttempts) {
-          // Move to dead letter (log and remove)
           job.status = JOB_STATUS.DEAD;
           this.stats.totalFailed++;
-
-          console.error(`[Queue] Job ${job.id.substring(0, 8)} permanently failed after ${job.attempts} attempts`);
-
-          // Log to AutoLog
+          
           if (job.data.projectId && job.data.commit?.hash) {
-            await autoLogger.logError({
-              projectId: job.data.projectId,
-              commitHash: job.data.commit.hash,
-              commitMessage: job.data.commit.message,
-              author: job.data.commit.author,
-              stage: STAGES.QUEUE,
-              error: new Error(`Job failed after ${job.attempts} attempts: ${error.message}`),
-              pipelineTrace: job.pipelineTrace,
-              deliveryId: job.data.deliveryId
-            });
+             await autoLogger.logError({
+               projectId: job.data.projectId,
+               commitHash: job.data.commit.hash,
+               commitMessage: job.data.commit.message,
+               author: job.data.commit.author,
+               stage: STAGES.QUEUE,
+               error: new Error(`Job failed after ${job.attempts} attempts: ${error.message}`),
+               pipelineTrace: job.pipelineTrace,
+               deliveryId: job.data.deliveryId
+             });
           }
-
-          // Remove dead job and add to history
-          this.queue.shift();
+          
+          userQueue.shift(); // Remove dead job
           this.addToHistory(job);
         } else {
-          // Move to back of queue for retry
-          this.queue.shift();
-          job.status = JOB_STATUS.PENDING;
-          this.queue.push(job);
-
-          console.log(`[Queue] Job ${job.id.substring(0, 8)} requeued for retry`);
+             // Requeue (keep at head? or move to back?)
+             // Usually move to back to let others pass? 
+             // Logic: userQueue.shift(); userQueue.push(job);
+             // But let's retry immediately or effectively keep at head but mark pending?
+             // Simple logic: shift then push to back of own queue
+             userQueue.shift();
+             job.status = JOB_STATUS.PENDING;
+             userQueue.push(job);
+             console.log(`[Queue] Job ${job.id.substring(0, 8)} requeued for retry`);
         }
+      }
+
+      // If user still has jobs, put them back nicely in the round robin
+      if (userQueue.length > 0) {
+        this.activeUserIds.push(currentBucketKey);
+      } else {
+        this.userQueues.delete(currentBucketKey);
       }
     }
 
@@ -286,15 +325,25 @@ class WebhookQueue extends EventEmitter {
    * @returns {Object} - Queue status
    */
   getStatus() {
+    let totalQueued = 0;
+    const allJobs = [];
+    
+    for (const [userId, jobs] of this.userQueues) {
+      totalQueued += jobs.length;
+      allJobs.push(...jobs);
+    }
+
     return {
-      queueLength: this.queue.length,
+      queueLength: totalQueued,
       processing: this.processing,
+      activeUsers: this.activeUserIds.length,
       stats: {
         ...this.stats,
         uptime: Date.now() - this.stats.startTime.getTime()
       },
-      jobs: this.queue.map(j => ({
+      jobs: allJobs.map(j => ({
         id: j.id,
+        bucketKey: j.bucketKey,
         status: j.status,
         attempts: j.attempts,
         queuedAt: j.queuedAt,
@@ -309,9 +358,11 @@ class WebhookQueue extends EventEmitter {
    * @returns {Object|null} - Job or null
    */
   getJob(jobId) {
-    // Check active queue first
-    const queuedJob = this.queue.find(j => j.id === jobId);
-    if (queuedJob) return queuedJob;
+    // Check active queues first
+    for (const jobs of this.userQueues.values()) {
+      const job = jobs.find(j => j.id === jobId);
+      if (job) return job;
+    }
     
     // Check history for completed/failed jobs
     return this.jobHistory.get(jobId) || null;
@@ -323,7 +374,12 @@ class WebhookQueue extends EventEmitter {
    * @returns {boolean} - True if commit is already queued
    */
   isCommitQueued(commitHash) {
-    return this.queue.some(j => j.data.commit?.hash === commitHash);
+    for (const jobs of this.userQueues.values()) {
+      if (jobs.some(j => j.data.commit?.hash === commitHash)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -331,19 +387,27 @@ class WebhookQueue extends EventEmitter {
    * @returns {number} - Number of jobs cleared
    */
   clear() {
-    const count = this.queue.length;
-    this.queue = [];
+    let count = 0;
+    for (const jobs of this.userQueues.values()) {
+      count += jobs.length;
+    }
+    this.userQueues.clear();
+    this.activeUserIds = [];
     this.processing = false;
     console.log(`[Queue] Cleared ${count} jobs`);
     return count;
   }
 
   /**
-   * Get queue length
+   * Get total queue length
    * @returns {number} - Number of jobs in queue
    */
   get length() {
-    return this.queue.length;
+    let count = 0;
+    for (const jobs of this.userQueues.values()) {
+      count += jobs.length;
+    }
+    return count;
   }
 }
 

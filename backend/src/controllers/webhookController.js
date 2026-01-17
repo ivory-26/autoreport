@@ -133,6 +133,7 @@ async function handleGitHubWebhook(req, res) {
     // Enqueue the job
     const jobId = webhookQueue.enqueue({
       type: 'webhook',
+      userId: project.owner, // For Fair Queueing
       projectId: project._id,
       project: {
         name: project.name,
@@ -174,6 +175,59 @@ async function processWebhookJob(job) {
     ...job.pipelineTrace,
     analysisStarted: new Date()
   };
+
+  // Helper to determine author's role in the project
+  const getAuthorInfo = async (authorName, authorEmail) => {
+    try {
+      // Fetch the full project document to check collaborators
+      const fullProject = await Project.findById(projectId).lean();
+      if (!fullProject) {
+        return { username: authorName, role: 'external', isCollaborator: false };
+      }
+
+      // Check if author is the owner
+      if (fullProject.ownerUsername?.toLowerCase() === authorName?.toLowerCase()) {
+        return { 
+          username: authorName, 
+          email: authorEmail,
+          role: 'owner', 
+          isCollaborator: true,
+          avatarUrl: `https://github.com/${authorName}.png`
+        };
+      }
+
+      // Check if author is a collaborator
+      const collaborator = fullProject.collaborators?.find(
+        c => c.username?.toLowerCase() === authorName?.toLowerCase() ||
+             c.email?.toLowerCase() === authorEmail?.toLowerCase()
+      );
+
+      if (collaborator) {
+        return {
+          username: collaborator.username || authorName,
+          email: collaborator.email || authorEmail,
+          role: collaborator.role || 'editor',
+          isCollaborator: true,
+          avatarUrl: `https://github.com/${collaborator.username}.png`
+        };
+      }
+
+      // External contributor
+      return { 
+        username: authorName, 
+        email: authorEmail,
+        role: 'external', 
+        isCollaborator: false 
+      };
+    } catch (error) {
+      console.error('[Pipeline] Error getting author info:', error.message);
+      return { username: authorName, role: 'external', isCollaborator: false };
+    }
+  };
+
+  // Get author information for tracking
+  const authorInfo = await getAuthorInfo(commit.author, commit.authorEmail);
+  console.log(`[Pipeline] Processing commit by ${authorInfo.username} (${authorInfo.role})`);
 
   try {
     webhookQueue.sendProgress(job.id, {
@@ -250,7 +304,8 @@ async function processWebhookJob(job) {
         hash: commit.hash,
         message: commit.message,
         author: commit.author
-      }
+      },
+      authorInfo // Pass role/collaborator context
     });
 
     console.log('[Pipeline] Writer results:', writerResults.map(r => ({
@@ -354,6 +409,7 @@ async function processWebhookJob(job) {
           commitHash: commit.hash,
           commitMessage: commit.message,
           author: commit.author,
+          authorInfo,
           successes: successfulUpdates,
           failures: failedUpdates,
           pipelineTrace,
@@ -367,6 +423,7 @@ async function processWebhookJob(job) {
           commitHash: commit.hash,
           commitMessage: commit.message,
           author: commit.author,
+          authorInfo,
           result: {
             sectionTitle: successfulUpdates.map(u => u.sectionTitle).join(', '),
             sectionId: primaryUpdate.sectionId,
@@ -397,6 +454,7 @@ async function processWebhookJob(job) {
       commitHash: commit.hash,
       commitMessage: commit.message,
       author: commit.author,
+      authorInfo,
       stage: determineErrorStage(error, pipelineTrace),
       error,
       pipelineTrace,

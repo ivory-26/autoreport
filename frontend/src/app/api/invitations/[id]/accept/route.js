@@ -91,6 +91,7 @@ export async function POST(request, { params }) {
         userId: userId,
         username: username,
         email: email,
+        avatarUrl: session.user?.image,
         role: invitation.role,
         addedAt: new Date()
       });

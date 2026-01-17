@@ -32,6 +32,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { InviteCollaboratorForm } from '@/components/InviteCollaboratorForm';
 
 /**
@@ -75,12 +82,43 @@ export function CollaboratorsList({ projectId, projectName, isOwner }) {
       const data = await response.json();
 
       if (data.success) {
-        setCollaborators(prev => prev.filter(c => c.username !== username));
+        // Optimistic update with case-insensitivity
+        setCollaborators(prev => prev.filter(c => c.username?.toLowerCase() !== username.toLowerCase()));
+
+        // Sync with server to be sure
+        await fetchCollaborators();
+      } else {
+        console.error('Failed to remove collaborator:', data.error);
+        // Optionally show toast/alert here
       }
     } catch (error) {
       console.error('Error removing collaborator:', error);
     } finally {
       setRemovingUsername(null);
+    }
+  };
+
+  const handleRoleChange = async (username, newRole) => {
+    // Optimistic update
+    const previousCollaborators = [...collaborators];
+    setCollaborators(prev => prev.map(c =>
+      c.username === username ? { ...c, role: newRole } : c
+    ));
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/collaborators`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, role: newRole })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update role');
+      }
+    } catch (error) {
+      console.error('Error updating role:', error);
+      // Revert optimistic update
+      setCollaborators(previousCollaborators);
     }
   };
 
@@ -187,7 +225,7 @@ export function CollaboratorsList({ projectId, projectName, isOwner }) {
               >
                 <div className="flex items-center gap-3">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={`https://github.com/${collaborator.username}.png`} />
+                    <AvatarImage src={collaborator.avatarUrl || `https://github.com/${collaborator.username}.png`} />
                     <AvatarFallback>{collaborator.username?.[0]?.toUpperCase()}</AvatarFallback>
                   </Avatar>
                   <div>
@@ -198,9 +236,25 @@ export function CollaboratorsList({ projectId, projectName, isOwner }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant={getRoleBadgeVariant(collaborator.role)} className="capitalize">
-                    {collaborator.role}
-                  </Badge>
+                  {isOwner ? (
+                    <Select
+                      defaultValue={collaborator.role}
+                      onValueChange={(val) => handleRoleChange(collaborator.username, val)}
+                    >
+                      <SelectTrigger className="h-7 w-[90px] text-xs px-2 bg-background border-dashed">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="viewer">Viewer</SelectItem>
+                        <SelectItem value="editor">Editor</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Badge variant={getRoleBadgeVariant(collaborator.role)} className="capitalize">
+                      {collaborator.role}
+                    </Badge>
+                  )}
                   {isOwner && (
                     <AlertDialog>
                       <AlertDialogTrigger asChild>

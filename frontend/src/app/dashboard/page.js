@@ -50,16 +50,28 @@ async function enrichProjectsWithReports(projects, isShared = false) {
         .select('title status metadata updatedAt _id projectId')
         .lean();
       
-      return {
+      const serializedProject = {
         ...project,
         _id: project._id.toString(),
+        owner: project.owner?.toString(),
+        createdAt: project.createdAt?.toISOString(),
+        updatedAt: project.updatedAt?.toISOString(),
+        collaborators: project.collaborators?.map(c => ({
+          ...c,
+          userId: c.userId?.toString(),
+          _id: c._id?.toString(), // Subdocument ID
+          addedAt: c.addedAt instanceof Date ? c.addedAt.toISOString() : c.addedAt
+        })) || [],
         isShared,
         report: report ? {
           ...report,
           _id: report._id?.toString() || '',
           projectId: report.projectId?.toString() || project._id.toString(),
+          updatedAt: report.updatedAt?.toISOString()
         } : null,
       };
+
+      return serializedProject;
     })
   );
 

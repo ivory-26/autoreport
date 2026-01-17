@@ -31,6 +31,10 @@ const projectSchema = new mongoose.Schema({
     type: String,
     required: false
   },
+  webhookId: {
+    type: String,
+    required: false
+  },
   settings: {
     autoProcess: {
       type: Boolean,

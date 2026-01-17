@@ -130,6 +130,7 @@ async function generate({
   targetSection,
   projectMetadata,
   commitInfo,
+  authorInfo,
   repoContext, // Optional: for initial generation
   allSections   // Optional: template sections for context
 }) {
@@ -147,6 +148,7 @@ async function generate({
       targetSection,
       projectMetadata,
       commitInfo,
+      authorInfo, // Pass into prompt creator
       repoContext,
       allSections
     });
@@ -456,7 +458,8 @@ async function generateForAllSections({
   templateSections,
   report,
   projectMetadata,
-  commitInfo
+  commitInfo,
+  authorInfo // Add authorInfo param
 }) {
   const results = [];
 
@@ -465,6 +468,7 @@ async function generateForAllSections({
   
   console.log('[Writer] Template sections available:', templateSections.map(s => s.id));
   console.log('[Writer] Analyzer suggested sections:', analysisResult.suggestedSections?.map(s => s.sectionId));
+  console.log(`[Writer] Generating content for ${authorInfo?.role || 'editor'} role (${commitInfo.author})`);
   
   if (analysisResult.suggestedSections && analysisResult.suggestedSections.length > 0) {
     for (const suggestion of analysisResult.suggestedSections.slice(0, 3)) {
@@ -526,16 +530,20 @@ async function generateForAllSections({
         targetSection,
         projectMetadata,
         commitInfo,
+        authorInfo, // Pass authorInfo
         allSections: templateSections // Pass all sections for context
       });
-      results.push(result);
-    } catch (err) {
-      console.error(`[Writer] Failed to generate for section ${targetSection.title}:`, err.message);
+      
+      if (result.success) {
+        results.push(result);
+      }
+    } catch (error) {
+      console.error(`[Writer] Failed to generate for section "${targetSection.title}":`, error.message);
       results.push({
-        success: false,
         sectionId: targetSection.id,
         sectionTitle: targetSection.title,
-        error: err.message
+        success: false,
+        error: error.message
       });
     }
   }

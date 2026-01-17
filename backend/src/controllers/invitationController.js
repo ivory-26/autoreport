@@ -9,6 +9,13 @@
 
 const Project = require('../models/Project');
 const Invitation = require('../models/Invitation');
+const User = require('../models/User');
+const {
+  validateGitHubUser,
+  notifyInvitationOnGitHub,
+  addRepositoryCollaborator,
+  removeRepositoryCollaborator
+} = require('../services/githubService');
 
 /**
  * Send an invitation to collaborate on a project
@@ -21,7 +28,8 @@ async function sendInvitation(req, res) {
       inviteeUsername, 
       inviteeEmail,
       role = 'editor',
-      message 
+      message,
+      accessToken // GitHub access token for notifications
     } = req.body;
 
     const { username: inviterUsername } = req.body; // From authenticated session
@@ -33,8 +41,17 @@ async function sendInvitation(req, res) {
       });
     }
 
+    // Validate GitHub username exists
+    const { valid: userExists, user: githubUser } = await validateGitHubUser(inviteeUsername);
+    if (!userExists) {
+      return res.status(400).json({
+        success: false,
+        error: `GitHub user "${inviteeUsername}" not found. Please check the username.`
+      });
+    }
+
     // Find the project
-    const project = await Project.findById(projectId);
+    const project = await Project.findById(projectId).populate('owner');
     if (!project) {
       return res.status(404).json({
         success: false,
@@ -72,10 +89,10 @@ async function sendInvitation(req, res) {
       projectId,
       projectName: project.name,
       invitedBy: {
-        username: inviterUsername
+        username: inviterUsername || project.ownerUsername
       },
       inviteeUsername,
-      inviteeEmail,
+      inviteeEmail: inviteeEmail || githubUser.email,
       role,
       message,
       status: 'pending'
@@ -83,7 +100,34 @@ async function sendInvitation(req, res) {
 
     await invitation.save();
 
-    console.log(`[Invitation] ${inviterUsername} invited ${inviteeUsername} to project "${project.name}"`);
+    console.log(`[Invitation] ${inviterUsername || project.ownerUsername} invited ${inviteeUsername} to project "${project.name}"`);
+
+    // Send GitHub notification if access token is provided
+    let notificationResult = null;
+    if (accessToken && project.repoFullName) {
+      const [owner, repo] = project.repoFullName.split('/');
+      
+      notificationResult = await notifyInvitationOnGitHub({
+        owner,
+        repo,
+        accessToken,
+        inviteeUsername,
+        inviterUsername: inviterUsername || project.ownerUsername,
+        projectName: project.name,
+        role,
+        message
+      });
+
+      if (notificationResult.success) {
+        // Store the issue URL in the invitation for reference
+        invitation.githubNotification = {
+          issueNumber: notificationResult.issueNumber,
+          issueUrl: notificationResult.issueUrl,
+          sentAt: new Date()
+        };
+        await invitation.save();
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -91,10 +135,15 @@ async function sendInvitation(req, res) {
         id: invitation._id.toString(),
         projectName: invitation.projectName,
         inviteeUsername: invitation.inviteeUsername,
+        inviteeAvatarUrl: githubUser.avatar_url,
         role: invitation.role,
         status: invitation.status,
         expiresAt: invitation.expiresAt
-      }
+      },
+      notification: notificationResult ? {
+        sent: notificationResult.success,
+        issueUrl: notificationResult.issueUrl
+      } : null
     });
 
   } catch (error) {
@@ -158,7 +207,7 @@ async function getPendingInvitations(req, res) {
 async function acceptInvitation(req, res) {
   try {
     const { id } = req.params;
-    const { username, email } = req.body;
+    const { username, email, accessToken } = req.body;
 
     if (!username) {
       return res.status(400).json({
@@ -228,6 +277,7 @@ async function acceptInvitation(req, res) {
 
     // Update invitation status
     invitation.status = 'accepted';
+    invitation.acceptedAt = new Date();
     await invitation.save();
 
     console.log(`[Invitation] ${username} accepted invitation to project "${project.name}"`);
@@ -239,7 +289,8 @@ async function acceptInvitation(req, res) {
         id: project._id.toString(),
         name: project.name,
         repoFullName: project.repoFullName
-      }
+      },
+      githubAccess: null
     });
 
   } catch (error) {

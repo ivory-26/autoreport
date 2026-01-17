@@ -41,6 +41,29 @@ export async function DELETE(request, { params }) {
       );
     }
 
+    // Attempt to delete GitHub webhook
+    if (session.accessToken && project.repoFullName) {
+      try {
+        const [owner, repo] = project.repoFullName.split('/');
+        
+        // If we have a stored webhook ID, use it
+        if (project.webhookId) {
+          console.log(`[DeleteProject] Deleting webhook ${project.webhookId} from ${owner}/${repo}`);
+          await fetch(`https://api.github.com/repos/${owner}/${repo}/hooks/${project.webhookId}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${session.accessToken}`,
+              'X-GitHub-Api-Version': '2022-11-28',
+              'Accept': 'application/vnd.github+json'
+            }
+          });
+        }
+      } catch (webhookError) {
+        console.warn('[DeleteProject] Failed to delete GitHub webhook:', webhookError);
+        // Continue with project deletion even if webhook cleanup fails
+      }
+    }
+
     // Delete associated reports
     await Report.deleteMany({ projectId: project._id });
     

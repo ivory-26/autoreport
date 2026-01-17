@@ -53,8 +53,24 @@ const autoLogSchema = new mongoose.Schema({
   commitMessage: {
     type: String
   },
+  // Author information from the commit
   author: {
     type: String
+  },
+  // Extended author info for collaborator tracking
+  authorInfo: {
+    username: String,
+    email: String,
+    avatarUrl: String,
+    isCollaborator: {
+      type: Boolean,
+      default: false
+    },
+    role: {
+      type: String,
+      enum: ['owner', 'admin', 'editor', 'viewer', 'external'],
+      default: 'external'
+    }
   },
   deliveryId: {
     type: String,

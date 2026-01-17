@@ -63,6 +63,12 @@ const invitationSchema = new mongoose.Schema({
   message: {
     type: String,
     maxlength: 500
+  },
+  // GitHub notification tracking
+  githubNotification: {
+    issueNumber: Number,
+    issueUrl: String,
+    sentAt: Date
   }
 }, {
   timestamps: true

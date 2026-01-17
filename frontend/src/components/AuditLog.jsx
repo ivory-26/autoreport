@@ -153,14 +153,39 @@ export function AuditLog({ logs = [], repoUrl }) {
                   </div>
 
                   {(log.error || log.author) && (
-                    <div className="flex items-center justify-between gap-2 pt-0.5 mt-1 border-t border-muted/50">
-                      {log.author && (
-                        <p className="text-[10px] text-muted-foreground font-medium truncate">
-                          by {log.author}
-                        </p>
+                    <div className="flex items-center justify-between gap-2 pt-2 mt-2 border-t border-muted/50">
+                      {log.authorInfo ? (
+                        <div className="flex items-center gap-2">
+                          {log.authorInfo.avatarUrl && (
+                            <img
+                              src={log.authorInfo.avatarUrl}
+                              alt={log.authorInfo.username || log.author}
+                              className="w-5 h-5 rounded-full border border-border"
+                            />
+                          )}
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-medium">
+                              {log.authorInfo.username || log.author}
+                            </span>
+                            {log.authorInfo.isCollaborator && (
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full border capitalize ${log.authorInfo.role === 'owner'
+                                  ? 'bg-yellow-500/10 text-yellow-600 border-yellow-200 dark:text-yellow-400 dark:border-yellow-800'
+                                  : 'bg-blue-500/10 text-blue-600 border-blue-200 dark:text-blue-400 dark:border-blue-800'
+                                }`}>
+                                {log.authorInfo.role}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        log.author && (
+                          <p className="text-[10px] text-muted-foreground font-medium truncate">
+                            by {log.author}
+                          </p>
+                        )
                       )}
                       {log.error && (
-                        <p className="text-[10px] text-red-500 font-medium truncate">
+                        <p className="text-[10px] text-red-500 font-medium truncate ml-auto">
                           Error: {log.error.message}
                         </p>
                       )}

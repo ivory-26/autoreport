@@ -123,11 +123,29 @@ You MUST respond with valid JSON only. No markdown code fences.
  * @param {Array} [params.allSections] - All sections in the template (for context)
  * @returns {string} The formatted user prompt
  */
+/**
+ * Creates the user prompt for the writer agent
+ * @param {Object} params
+ * @param {Object} params.analysisResult - Output from the Analyzer Agent
+ * @param {Object} params.targetSection - The section to write for
+ * @param {string} params.targetSection.id - Section ID
+ * @param {string} params.targetSection.title - Section title
+ * @param {string} params.targetSection.existingContent - Current content
+ * @param {Array} params.targetSection.contentHistory - Previous content versions for context
+ * @param {Object} params.targetSection.style - Style configuration
+ * @param {Object} params.projectMetadata - Project info
+ * @param {Object} params.commitInfo - Commit information
+ * @param {Object} params.authorInfo - Author/Collaborator information
+ * @param {Object} [params.repoContext] - Full repository context (for initial generation)
+ * @param {Array} [params.allSections] - All sections in the template (for context)
+ * @returns {string} The formatted user prompt
+ */
 function createWriterUserPrompt({
   analysisResult,
   targetSection,
   projectMetadata,
   commitInfo,
+  authorInfo,
   repoContext,
   allSections
 }) {
@@ -154,6 +172,12 @@ function createWriterUserPrompt({
   // Calculate approximate existing word count
   const existingWordCount = existingContent.split(/\s+/).filter(Boolean).length;
   
+  // Determine role-based focus
+  const role = authorInfo?.role || 'editor';
+  const roleFocus = (role === 'owner' || role === 'admin') 
+    ? "ARCHITECTURAL AUTHORITY: Focus on high-level system design, decision rationale, and strategic implications."
+    : "TECHNICAL IMPLEMENTATION: Focus on specific code mechanics, function behavior, and direct system outputs.";
+
   // INITIAL GENERATION MODE (Full Repo Context)
   if (repoContext) {
     return `## Task
@@ -209,6 +233,10 @@ ${templateContext}
 - Project Name: ${projectMetadata.name || 'Software Project'}
 - Description: ${projectMetadata.description || 'No description provided'}
 
+## Collaborative Context
+- Change Author Role: ${role}
+- **GENERATION STRATEGY**: ${roleFocus}
+
 ## Analysis Results (Transform into academic prose)
 - Change Type: ${analysisResult.changeType}
 - Impact Level: ${analysisResult.impactLevel}
@@ -254,6 +282,7 @@ ${historyContext}
 4. NO commit hashes, NO author names, NO timestamps, NO version control terms
 5. Write in academic style suitable for IEEE or university project reports
 6. Focus on WHAT the functionality does and WHY it matters to the system
+7. **ADOPT THE ROLE STRATEGY**: ${role === 'owner' || role === 'admin' ? 'Use authoritative language defining system boundaries.' : 'Use descriptive language detailing implementation specifics.'}
 
 Generate the JSON response now.`;
 }
