@@ -259,7 +259,8 @@ class WebhookQueue extends EventEmitter {
               author: job.data.commit.author,
               stage: STAGES.QUEUE,
               error: new Error(`Job failed after ${job.attempts} attempts: ${error.message}`),
-              pipelineTrace: job.pipelineTrace
+              pipelineTrace: job.pipelineTrace,
+              deliveryId: job.data.deliveryId
             });
           }
 

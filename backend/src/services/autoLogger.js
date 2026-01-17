@@ -55,7 +55,8 @@ class AutoLogger {
     author,
     result,
     pipelineTrace,
-    analysisResult
+    analysisResult,
+    deliveryId
   }) {
     try {
       const processingTime = this.calculateProcessingTime(pipelineTrace);
@@ -66,6 +67,7 @@ class AutoLogger {
         commitHash,
         commitMessage,
         author,
+        deliveryId,
         addedToSection: result.sectionTitle,
         sectionId: result.sectionId,
         contentPreview: result.content?.substring(0, 200),
@@ -111,7 +113,8 @@ class AutoLogger {
     author,
     stage,
     error,
-    pipelineTrace
+    pipelineTrace,
+    deliveryId
   }) {
     try {
       const errorCode = this.classifyError(error);
@@ -122,6 +125,7 @@ class AutoLogger {
         commitHash,
         commitMessage,
         author,
+        deliveryId,
         processingTime,
         status: 'failed',
         error: {
@@ -164,7 +168,8 @@ class AutoLogger {
     commitMessage,
     author,
     reason,
-    ignoredFiles
+    ignoredFiles,
+    deliveryId
   }) {
     try {
       const logEntry = await AutoLog.create({
@@ -172,6 +177,7 @@ class AutoLogger {
         commitHash,
         commitMessage,
         author,
+        deliveryId,
         status: 'skipped',
         error: {
           stage: STAGES.FILTER,
@@ -213,7 +219,8 @@ class AutoLogger {
     author,
     successes,
     failures,
-    pipelineTrace
+    pipelineTrace,
+    deliveryId
   }) {
     try {
       const processingTime = this.calculateProcessingTime(pipelineTrace);
@@ -224,6 +231,7 @@ class AutoLogger {
         commitHash,
         commitMessage,
         author,
+        deliveryId,
         addedToSection: successes.map(s => s.sectionTitle).join(', '),
         contentPreview: `${successes.length} sections updated, ${failures.length} failed`,
         processingTime,
@@ -260,7 +268,8 @@ class AutoLogger {
     projectId,
     commitHash,
     commitMessage,
-    author
+    author,
+    deliveryId
   }) {
     try {
       const logEntry = await AutoLog.create({
@@ -268,6 +277,7 @@ class AutoLogger {
         commitHash,
         commitMessage,
         author,
+        deliveryId,
         status: 'pending',
         pipelineTrace: {
           webhookReceived: new Date()

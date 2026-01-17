@@ -56,6 +56,10 @@ const autoLogSchema = new mongoose.Schema({
   author: {
     type: String
   },
+  deliveryId: {
+    type: String,
+    index: true
+  },
   
   // Success case fields
   addedToSection: {

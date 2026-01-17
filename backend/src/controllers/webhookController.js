@@ -111,7 +111,8 @@ async function handleGitHubWebhook(req, res) {
           commitMessage: payload.head_commit?.message,
           author: payload.head_commit?.author?.name,
           reason: processedPayload.reason,
-          ignoredFiles: processedPayload.ignoredFiles
+          ignoredFiles: processedPayload.ignoredFiles,
+          deliveryId
         });
       }
 
@@ -139,7 +140,9 @@ async function handleGitHubWebhook(req, res) {
         settings: project.settings
       },
       ...processedPayload,
-      receivedAt
+      ...processedPayload,
+      receivedAt,
+      deliveryId
     });
 
     // Respond immediately (async processing)
@@ -165,7 +168,7 @@ async function handleGitHubWebhook(req, res) {
  */
 async function processWebhookJob(job) {
   const { data } = job;
-  const { projectId, project, commit, files, diff, summary } = data;
+  const { projectId, project, commit, files, diff, summary, deliveryId } = data;
 
   const pipelineTrace = {
     ...job.pipelineTrace,
@@ -353,7 +356,8 @@ async function processWebhookJob(job) {
           author: commit.author,
           successes: successfulUpdates,
           failures: failedUpdates,
-          pipelineTrace
+          pipelineTrace,
+          deliveryId
         });
       } else {
         // Full success
@@ -370,6 +374,7 @@ async function processWebhookJob(job) {
             wordCount: successfulUpdates.reduce((sum, u) => sum + (u.wordCount || 0), 0)
           },
           pipelineTrace,
+          deliveryId,
           analysisResult: {
             changeType: analysisResult.changeType,
             impactLevel: analysisResult.impactLevel,
@@ -394,7 +399,8 @@ async function processWebhookJob(job) {
       author: commit.author,
       stage: determineErrorStage(error, pipelineTrace),
       error,
-      pipelineTrace
+      pipelineTrace,
+      deliveryId
     });
 
     throw error; // Re-throw for queue retry logic

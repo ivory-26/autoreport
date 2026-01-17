@@ -38,6 +38,7 @@ async function checkCommitProcessingStatus(projectId, commitHash) {
       sectionUpdated: log.addedToSection,
       wordCount: log.wordCount,
       processedAt: log.createdAt,
+      deliveryId: log.deliveryId,
       message: 'Commit was processed successfully'
     };
   }
@@ -47,7 +48,8 @@ async function checkCommitProcessingStatus(projectId, commitHash) {
       processed: true,
       status: 'partial',
       message: 'Commit was partially processed',
-      processedAt: log.createdAt
+      processedAt: log.createdAt,
+      deliveryId: log.deliveryId
     };
   }
 
@@ -56,7 +58,8 @@ async function checkCommitProcessingStatus(projectId, commitHash) {
       processed: false,
       status: 'pending',
       message: 'Commit is currently being processed',
-      queuedAt: log.createdAt
+      queuedAt: log.createdAt,
+      deliveryId: log.deliveryId
     };
   }
 
@@ -65,7 +68,8 @@ async function checkCommitProcessingStatus(projectId, commitHash) {
       processed: true,
       status: 'skipped',
       message: log.error?.message || 'Commit was skipped',
-      processedAt: log.createdAt
+      processedAt: log.createdAt,
+      deliveryId: log.deliveryId
     };
   }
 
@@ -76,6 +80,7 @@ async function checkCommitProcessingStatus(projectId, commitHash) {
     error: log.error?.message,
     retryable: log.error?.retryable,
     processedAt: log.createdAt,
+    deliveryId: log.deliveryId,
     message: 'Commit processing failed'
   };
 }
