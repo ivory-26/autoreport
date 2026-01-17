@@ -77,3 +77,6 @@ next-env.d.ts
 *~
 *.sublime-project
 *.sublime-workspace
+
+# Documentation
+AutoReport_ PRD.md

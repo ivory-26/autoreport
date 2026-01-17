@@ -4,20 +4,34 @@ import User from '@/lib/models/User';
 
 export const authOptions = {
   providers: [
+    // Provider for Full Access (Public & Private)
     GitHubProvider({
+      id: 'github',
+      name: 'GitHub (All Repos)',
       clientId: process.env.GITHUB_CLIENT_ID,
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
       authorization: {
         params: {
-          // Request access to user's repos for webhook setup
           scope: 'read:user user:email repo',
+        },
+      },
+    }),
+    // Provider for Public Access Only
+    GitHubProvider({
+      id: 'github-public',
+      name: 'GitHub (Public Only)',
+      clientId: process.env.GITHUB_CLIENT_ID,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      authorization: {
+        params: {
+          scope: 'read:user user:email public_repo',
         },
       },
     }),
   ],
   callbacks: {
     async signIn({ user, account, profile }) {
-      if (account.provider === 'github') {
+      if (account.provider === 'github' || account.provider === 'github-public') {
         try {
           await dbConnect();
           // Profile contains raw GitHub data (id, login, etc) coming from OAuth
