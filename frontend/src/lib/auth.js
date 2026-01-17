@@ -20,8 +20,8 @@ export const authOptions = {
     GitHubProvider({
       id: 'github-public',
       name: 'GitHub (Public Only)',
-      clientId: process.env.GITHUB_CLIENT_ID,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      clientId: process.env.GITHUB_PUBLIC_CLIENT_ID,
+      clientSecret: process.env.GITHUB_PUBLIC_CLIENT_SECRET,
       authorization: {
         params: {
           scope: 'read:user user:email public_repo',
