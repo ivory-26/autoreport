@@ -96,10 +96,12 @@ const { processWebhookJob } = require('./controllers/webhookController');
 // --- Auto-seed templates on startup ---
 async function initializeApp() {
     try {
-        // Seed default templates if none exist
+        console.log('🚀 Initializing AutoReport backend...');
+        
+        // Step 1: Seed default templates if none exist
         await seedTemplates();
         
-        // Register queue processor for handling different job types
+        // Step 2: Register queue processor for handling different job types
         webhookQueue.setProcessor(async (job) => {
             const jobType = job.data?.type || 'webhook';
             
@@ -118,6 +120,23 @@ async function initializeApp() {
         
         console.log('✅ App initialization complete');
         console.log('📋 Queue processor registered');
+        
+        // Step 3: Fetch missed webhooks from GitHub (async, don't block startup)
+        // This runs in background to recover webhooks missed during downtime
+        const { fetchMissedWebhooks } = require('./services/webhookResilience');
+        setImmediate(async () => {
+            try {
+                console.log('🔄 Checking for missed webhooks during downtime...');
+                const recovered = await fetchMissedWebhooks();
+                if (recovered > 0) {
+                    console.log(`✅ Recovered ${recovered} missed webhooks`);
+                }
+            } catch (error) {
+                console.error('⚠️ Error recovering missed webhooks:', error.message);
+                // Non-fatal - don't crash the app
+            }
+        });
+        
     } catch (error) {
         console.error('⚠️ App initialization warning:', error.message);
         // Don't throw - seeding failure shouldn't prevent app from starting

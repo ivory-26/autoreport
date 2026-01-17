@@ -297,16 +297,28 @@ class WebhookQueue extends EventEmitter {
           userQueue.shift(); // Remove dead job
           this.addToHistory(job);
         } else {
-             // Requeue (keep at head? or move to back?)
-             // Usually move to back to let others pass? 
-             // Logic: userQueue.shift(); userQueue.push(job);
-             // But let's retry immediately or effectively keep at head but mark pending?
-             // Simple logic: shift then push to back of own queue
+             // Retry with exponential backoff
+             const backoffDelay = Math.min(
+               Math.pow(2, job.attempts) * 1000 + Math.random() * 1000, // 2^attempts seconds + jitter
+               60000 // Cap at 60 seconds
+             );
+             
+             console.log(`[Queue] Job ${job.id.substring(0, 8)} will retry in ${backoffDelay}ms (attempt ${job.attempts + 1}/${this.maxAttempts})`);
+             
              userQueue.shift();
              job.status = JOB_STATUS.PENDING;
-             userQueue.push(job);
-             console.log(`[Queue] Job ${job.id.substring(0, 8)} requeued for retry`);
-        }
+             
+             // Schedule retry with backoff
+             setTimeout(() => {
+               userQueue.push(job);
+               // Re-add user to active list if not present
+               if (!this.activeUserIds.includes(currentBucketKey)) {
+                 this.activeUserIds.push(currentBucketKey);
+               }
+               // Trigger processing again
+               this.process();
+             }, backoffDelay);
+         }
       }
 
       // If user still has jobs, put them back nicely in the round robin

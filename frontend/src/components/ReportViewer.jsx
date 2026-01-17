@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { marked } from 'marked';
 import { Button } from '@/components/ui/button';
@@ -157,8 +157,40 @@ export function ReportViewer({ report: initialReport, onDismissHighlight, repoUr
   const [revertTooltips, setRevertTooltips] = useState(new Set());
   const [acceptingAll, setAcceptingAll] = useState(false);
   const [error, setError] = useState(null);
+  // Start with false to avoid hydration mismatch, then restore from localStorage
   const [isOutlineOpen, setIsOutlineOpen] = useState(false);
   const [expandedOutlineSections, setExpandedOutlineSections] = useState(new Set());
+  const [mounted, setMounted] = useState(false);
+
+  // Restore state from localStorage after mount (client-side only)
+  useEffect(() => {
+    setMounted(true);
+
+    // Restore outline open state
+    const savedOutlineOpen = localStorage.getItem('reportOutlineOpen');
+    if (savedOutlineOpen) {
+      setIsOutlineOpen(JSON.parse(savedOutlineOpen));
+    }
+
+    // Restore expanded sections
+    const savedExpanded = localStorage.getItem('reportOutlineExpanded');
+    if (savedExpanded) {
+      setExpandedOutlineSections(new Set(JSON.parse(savedExpanded)));
+    }
+  }, []);
+
+  // Persist outline state to localStorage
+  useEffect(() => {
+    if (mounted) {
+      localStorage.setItem('reportOutlineOpen', JSON.stringify(isOutlineOpen));
+    }
+  }, [isOutlineOpen, mounted]);
+
+  useEffect(() => {
+    if (mounted) {
+      localStorage.setItem('reportOutlineExpanded', JSON.stringify([...expandedOutlineSections]));
+    }
+  }, [expandedOutlineSections, mounted]);
 
   // Count sections with new AI content
   const sectionsWithNewContent = report?.sections?.filter(s => s.aiLastTouched) || [];
@@ -379,30 +411,39 @@ export function ReportViewer({ report: initialReport, onDismissHighlight, repoUr
   const endIndex = startIndex + SECTIONS_PER_PAGE;
   const currentSections = sections.slice(startIndex, endIndex);
 
-  // Helper to navigate to a section (handles pagination)
+  // Helper  // Navigate to a section and smooth scroll
   const navigateToSection = (sectionId) => {
-    const sectionIndex = sections.findIndex(s => s.id === sectionId);
-    if (sectionIndex === -1) return;
+    const targetSection = sections.find(s => s.id === sectionId);
+    if (!targetSection) return;
 
+    // Calculate which page the section is on
+    const sectionIndex = sections.indexOf(targetSection);
     const targetPage = Math.floor(sectionIndex / SECTIONS_PER_PAGE);
-    setCurrentPage(targetPage);
 
-    // Expand the section if it's collapsed
-    if (collapsedSections.has(sectionId)) {
-      setCollapsedSections(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(sectionId);
-        return newSet;
-      });
+    // Change page if needed
+    if (currentPage !== targetPage) {
+      setCurrentPage(targetPage);
     }
 
-    // Scroll to section after a small delay to allow page change
+    // Scroll to section after a brief delay to allow page change
     setTimeout(() => {
       const element = document.getElementById(`section-${sectionId}`);
       if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        element.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+          inline: 'nearest'
+        });
+
+        // Flash highlight effect
+        element.style.transition = 'background-color 0.3s ease';
+        const originalBg = element.style.backgroundColor;
+        element.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
+        setTimeout(() => {
+          element.style.backgroundColor = originalBg;
+        }, 1000);
       }
-    }, 100);
+    }, currentPage !== targetPage ? 100 : 0);
   };
 
   // Toggle outline section expansion
@@ -509,13 +550,17 @@ export function ReportViewer({ report: initialReport, onDismissHighlight, repoUr
                       )}
                       <button
                         onClick={() => navigateToSection(section.id)}
-                        className={`flex-1 text-left px-3 py-2 rounded-lg transition-colors ${!hasSubsections ? 'ml-7' : ''
+                        className={`flex-1 text-left px-3 py-2 rounded-lg transition-all ${!hasSubsections ? 'ml-7' : ''
+                          } ${section.aiLastTouched
+                            ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800'
+                            : 'hover:bg-muted/50'
                           }`}
                       >
                         <span className="text-muted-foreground/60 text-sm mr-2.5 font-mono">
                           {section.number}
                         </span>
-                        <span className="text-foreground/85 font-medium text-sm leading-relaxed">
+                        <span className={`font-medium text-sm leading-relaxed ${section.aiLastTouched ? 'text-green-700 dark:text-green-400' : 'text-foreground/85'
+                          }`}>
                           {section.title}
                         </span>
                         {section.aiLastTouched && (
@@ -533,13 +578,17 @@ export function ReportViewer({ report: initialReport, onDismissHighlight, repoUr
                             <button
                               key={subsection.id}
                               onClick={() => navigateToSection(subsection.id)}
-                              className={`w-full text-left px-3 py-1.5 rounded-lg hover:bg-muted/50 transition-colors group ${isLastSubItem ? 'mb-1' : ''
+                              className={`w-full text-left px-3 py-1.5 rounded-lg transition-all group ${isLastSubItem ? 'mb-1' : ''
+                                } ${subsection.aiLastTouched
+                                  ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800'
+                                  : 'hover:bg-muted/50'
                                 }`}
                             >
                               <span className="text-muted-foreground/60 mr-2.5 text-sm font-mono">
                                 {subsection.number}
                               </span>
-                              <span className="text-foreground/75 text-sm leading-relaxed">
+                              <span className={`text-sm leading-relaxed ${subsection.aiLastTouched ? 'text-green-700 dark:text-green-400 font-medium' : 'text-foreground/75'
+                                }`}>
                                 {subsection.title}
                               </span>
                               {subsection.aiLastTouched && (

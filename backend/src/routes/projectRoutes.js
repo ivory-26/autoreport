@@ -32,6 +32,30 @@ router.post('/', validate(schemas.createProject), createProject);
 // Setup GitHub webhook for a project
 router.post('/:projectId/webhook', setupWebhook);
 
+// Recover missed webhooks for a project (after deployment/downtime)
+router.post('/:projectId/recover-webhooks', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const Project = require('../models/Project');
+    const { fetchMissedWebhooksForProject } = require('../services/webhookResilience');
+    
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    const recovered = await fetchMissedWebhooksForProject(project);
+    res.json({ 
+      message: recovered > 0 ? `Recovered ${recovered} missed webhooks` : 'No missed webhooks found',
+      recovered 
+    });
+  } catch (error) {
+    console.error('[API] Error recovering webhooks:', error);
+    res.status(500).json({ error: 'Failed to recover webhooks' });
+  }
+});
+
+
 // Generate initial report based on last commit (Expensive AI op)
 router.post('/:projectId/generate-initial', aiLimiter, generateInitialReport);
 

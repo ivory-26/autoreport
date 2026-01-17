@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { formatRelativeTime, formatAbsoluteDateTime } from '@/lib/time';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +32,16 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [relativeTime, setRelativeTime] = useState(formatRelativeTime(project.report?.updatedAt));
+
+  // Update relative time every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRelativeTime(formatRelativeTime(project.report?.updatedAt));
+    }, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, [project.report?.updatedAt]);
 
   const handleDelete = async () => {
     try {
@@ -178,7 +189,12 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
               <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                 <div className="flex flex-col gap-0.5">
                   <span className="opacity-70">Last Updated</span>
-                  <span className="font-medium text-foreground">{formattedDate}</span>
+                  <span
+                    className="font-medium text-foreground cursor-help"
+                    title={formatAbsoluteDateTime(project.report?.updatedAt)}
+                  >
+                    {relativeTime}
+                  </span>
                 </div>
                 {project.report.metadata?.totalWordCount > 0 && (
                   <div className="flex flex-col gap-0.5">
