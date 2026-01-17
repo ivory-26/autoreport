@@ -30,7 +30,7 @@ AutoReport eliminates "Documentation Debt" by integrating directly with your dev
 ### Backend (Worker)
 - **Runtime**: Node.js / Express
 - **Database**: MongoDB Atlas
-- **AI Engine**: Gemini API
+- **AI Engine**: Groq (Qwen3-32b, GPT-OSS-120b) with backups (Llama4-Scout-17b-16e)
 - **Deployment**: Render
 
 ## 📂 Project Structure
@@ -48,7 +48,7 @@ Verified Monorepo structure:
 ### Prerequisites
 - Node.js (v18+)
 - MongoDB Atlas URI
-- Google Gemini API Key
+- Groq API Key
 - GitHub OAuth Client ID & Secret
 
 ### Installation
