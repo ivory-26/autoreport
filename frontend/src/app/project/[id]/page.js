@@ -14,6 +14,10 @@ import {
   ExternalLink
 } from 'lucide-react';
 
+// Force dynamic rendering and disable caching
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 async function getReportData(id) {
   await dbConnect();
 
