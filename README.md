@@ -22,13 +22,14 @@ AutoReport eliminates "Documentation Debt" by integrating directly with your dev
 ## 🛠️ Tech Stack
 
 ### Frontend (UI)
-- **Framework**: Next.js 15 (App Router)
-- **Styling**: Tailwind CSS
+- **Framework**: Next.js 16.1.1 (App Router)
+- **Styling**: Tailwind CSS 4.0
+- **React**: React 19.2.3
 - **Authentication**: NextAuth.js (GitHub OAuth)
 - **Deployment**: Vercel
 
 ### Backend (Worker)
-- **Runtime**: Node.js / Express
+- **Runtime**: Node.js / Express 5.2.1
 - **Database**: MongoDB Atlas
 - **AI Engine**: Groq (Qwen3-32b, GPT-OSS-120b) with backups (Llama4-Scout-17b-16e)
 - **Deployment**: Render
