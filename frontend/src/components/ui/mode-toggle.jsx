@@ -142,6 +142,6 @@ export function ModeToggle() {
         </div>
         <span className="sr-only">Toggle theme</span>
       </Button>
-    </div>
+    </div >
   )
 }

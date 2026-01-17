@@ -1,42 +1,54 @@
 'use client';
 
-import { useState } from 'react';
+/**
+ * ProjectTabs Component
+ * 
+ * Tab navigation uses ReportsPageTabs design inspired by Raul Dronca
+ * Implementation based on Wes Bos's CodePen - MIT License
+ * See @/components/ui/reports-page-tabs for full license text
+ */
+
 import { ReportViewer } from '@/components/ReportViewer';
 import { AuditLog } from '@/components/AuditLog';
 import { CollaboratorsList } from '@/components/CollaboratorsList';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, History, Users } from 'lucide-react';
+import {
+  ReportsPageTabs,
+  ReportsPageTabsList,
+  ReportsPageTabsTrigger,
+  ReportsPageTabsContent,
+} from '@/components/ui/reports-page-tabs';
+import { FileText, History, Users, BarChart3 } from 'lucide-react';
 
 export function ProjectTabs({ report, project, logs, isOwner }) {
   return (
-    <Tabs defaultValue="report" className="w-full">
-      <TabsList className="grid w-full max-w-md grid-cols-4">
-        <TabsTrigger value="report" className="gap-2">
+    <ReportsPageTabs defaultValue="report" className="w-full">
+      <ReportsPageTabsList>
+        <ReportsPageTabsTrigger value="report">
           <FileText className="h-4 w-4" />
           Report
-        </TabsTrigger>
-        <TabsTrigger value="stats" className="gap-2">
-          <FileText className="h-4 w-4" />
+        </ReportsPageTabsTrigger>
+        <ReportsPageTabsTrigger value="stats">
+          <BarChart3 className="h-4 w-4" />
           Stats
-        </TabsTrigger>
-        <TabsTrigger value="team" className="gap-2">
+        </ReportsPageTabsTrigger>
+        <ReportsPageTabsTrigger value="team">
           <Users className="h-4 w-4" />
           Team
-        </TabsTrigger>
-        <TabsTrigger value="activity" className="gap-2">
+        </ReportsPageTabsTrigger>
+        <ReportsPageTabsTrigger value="activity">
           <History className="h-4 w-4" />
           Activity
-        </TabsTrigger>
-      </TabsList>
+        </ReportsPageTabsTrigger>
+      </ReportsPageTabsList>
 
       {/* Report Tab */}
-      <TabsContent value="report" className="mt-6">
+      <ReportsPageTabsContent value="report" className="mt-6">
         <ReportViewer report={report} repoUrl={project?.repoUrl} projectId={project?._id} />
-      </TabsContent>
+      </ReportsPageTabsContent>
 
       {/* Stats Tab */}
-      <TabsContent value="stats" className="mt-6">
+      <ReportsPageTabsContent value="stats" className="mt-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -76,19 +88,19 @@ export function ProjectTabs({ report, project, logs, isOwner }) {
             )}
           </CardContent>
         </Card>
-      </TabsContent>
+      </ReportsPageTabsContent>
 
       {/* Team Tab */}
-      <TabsContent value="team" className="mt-6">
+      <ReportsPageTabsContent value="team" className="mt-6">
         <CollaboratorsList
           projectId={project?._id}
           projectName={project?.name}
           isOwner={isOwner}
         />
-      </TabsContent>
+      </ReportsPageTabsContent>
 
       {/* Activity Tab */}
-      <TabsContent value="activity" className="mt-6">
+      <ReportsPageTabsContent value="activity" className="mt-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -100,7 +112,7 @@ export function ProjectTabs({ report, project, logs, isOwner }) {
             <AuditLog logs={logs} repoUrl={project?.repoUrl} />
           </CardContent>
         </Card>
-      </TabsContent>
-    </Tabs>
+      </ReportsPageTabsContent>
+    </ReportsPageTabs>
   );
 }

@@ -1,15 +1,25 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+/**
+ * DashboardTabs Component
+ * 
+ * Tab navigation uses sliding bubble animation inspired by Raul Dronca
+ * Implementation based on Wes Bos's CodePen - MIT License
+ * See @/components/ui/reports-page-tabs for full license text
+ */
+
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
+import { cn } from '@/lib/utils';
+import {
   FolderKanban,
-  Mail, 
-  Check, 
-  X, 
+  Mail,
+  Check,
+  X,
   Loader2,
   Users,
   Clock
@@ -25,6 +35,32 @@ export function DashboardTabs({ children }) {
   const [isLoading, setIsLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
 
+  // Animation state
+  const [activeRect, setActiveRect] = useState(null);
+  const [hoverRect, setHoverRect] = useState(null);
+  const containerRef = useRef(null);
+
+  const updateActiveRect = useCallback(() => {
+    if (!containerRef.current) return;
+    const activeButton = containerRef.current.querySelector('[data-active="true"]');
+    if (activeButton) {
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const buttonRect = activeButton.getBoundingClientRect();
+      setActiveRect({
+        left: buttonRect.left - containerRect.left,
+        top: buttonRect.top - containerRect.top,
+        width: buttonRect.width,
+        height: buttonRect.height,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    updateActiveRect();
+    window.addEventListener('resize', updateActiveRect);
+    return () => window.removeEventListener('resize', updateActiveRect);
+  }, [updateActiveRect, activeTab]);
+
   useEffect(() => {
     fetchInvitations();
   }, []);
@@ -33,7 +69,7 @@ export function DashboardTabs({ children }) {
     try {
       const response = await fetch('/api/invitations/pending');
       const data = await response.json();
-      
+
       if (data.success) {
         setInvitations(data.invitations);
       }
@@ -51,7 +87,7 @@ export function DashboardTabs({ children }) {
         method: 'POST',
       });
       const data = await response.json();
-      
+
       if (data.success) {
         setInvitations(prev => prev.filter(inv => inv.id !== invitationId));
         router.refresh();
@@ -70,7 +106,7 @@ export function DashboardTabs({ children }) {
         method: 'POST',
       });
       const data = await response.json();
-      
+
       if (data.success) {
         setInvitations(prev => prev.filter(inv => inv.id !== invitationId));
       }
@@ -81,37 +117,113 @@ export function DashboardTabs({ children }) {
     }
   };
 
+  const handleMouseEnter = (e) => {
+    const button = e.currentTarget;
+    if (containerRef.current) {
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const buttonRect = button.getBoundingClientRect();
+      setHoverRect({
+        left: buttonRect.left - containerRect.left,
+        top: buttonRect.top - containerRect.top,
+        width: buttonRect.width,
+        height: buttonRect.height,
+      });
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setHoverRect(null);
+  };
+
   return (
     <div className="space-y-6">
-      {/* Tabs */}
-      <div className="flex border-b">
-        <button
-          onClick={() => setActiveTab('projects')}
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'projects'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <FolderKanban className="h-4 w-4" />
-          Projects
-        </button>
-        <button
-          onClick={() => setActiveTab('invitations')}
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'invitations'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <Mail className="h-4 w-4" />
-          Invitations
-          {invitations.length > 0 && (
-            <Badge variant="destructive" className="h-5 min-w-5 px-1.5 text-xs">
-              {invitations.length}
-            </Badge>
+      {/* Premium Tabs with Sliding Bubble */}
+      <div className="relative w-fit">
+
+        <div
+          ref={containerRef}
+          className={cn(
+            'relative inline-flex items-center p-1 rounded-full',
+            'bg-gradient-to-b from-zinc-100 to-zinc-200 dark:from-zinc-900 dark:to-zinc-950',
+            'border border-zinc-200 dark:border-zinc-800',
+            'shadow-[inset_2px_2px_4px_rgba(0,0,0,0.05)] dark:shadow-[inset_2px_2px_8px_rgba(0,0,0,0.4)]'
           )}
-        </button>
+        >
+          {/* Hover bubble */}
+          {hoverRect && (
+            <motion.div
+              className="absolute rounded-full bg-blue-500/10 dark:bg-blue-400/10 border border-blue-500/20 dark:border-blue-400/20 shadow-[inset_0_1px_3px_rgba(255,255,255,0.1)]"
+              initial={false}
+              animate={{
+                left: hoverRect.left,
+                top: hoverRect.top,
+                width: hoverRect.width,
+                height: hoverRect.height,
+              }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              style={{ zIndex: 1 }}
+            />
+          )}
+
+          {/* Active bubble */}
+          {activeRect && (
+            <motion.div
+              className="absolute rounded-full bg-gradient-to-b from-blue-600 to-blue-700 dark:from-blue-500 dark:to-blue-600 shadow-[0_2px_8px_rgba(37,99,235,0.4),inset_0_1px_1px_rgba(255,255,255,0.2)]"
+              initial={false}
+              animate={{
+                left: activeRect.left,
+                top: activeRect.top,
+                width: activeRect.width,
+                height: activeRect.height,
+              }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              style={{ zIndex: 2 }}
+            />
+          )}
+
+          <button
+            data-active={activeTab === 'projects'}
+            onClick={() => setActiveTab('projects')}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            className={cn(
+              'relative z-10 inline-flex items-center justify-center gap-2',
+              'px-6 py-2.5 rounded-full',
+              'text-sm font-medium whitespace-nowrap',
+              'transition-all duration-300',
+              activeTab === 'projects'
+                ? 'text-white'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400'
+            )}
+          >
+            <FolderKanban className="h-4 w-4" />
+            Projects
+          </button>
+
+          <button
+            data-active={activeTab === 'invitations'}
+            onClick={() => setActiveTab('invitations')}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            className={cn(
+              'relative z-10 inline-flex items-center justify-center gap-2',
+              'px-6 py-2.5 rounded-full',
+              'text-sm font-medium whitespace-nowrap',
+              'transition-all duration-300',
+              activeTab === 'invitations'
+                ? 'text-white'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400'
+            )}
+          >
+            <Mail className="h-4 w-4" />
+            Invitations
+            {invitations.length > 0 && (
+              <Badge variant="destructive" className="h-5 min-w-5 px-1.5 text-xs">
+                {invitations.length}
+              </Badge>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Tab Content */}
@@ -167,7 +279,7 @@ export function DashboardTabs({ children }) {
                           </p>
                         )}
                       </div>
-                      
+
                       <div className="flex items-center gap-2 shrink-0">
                         <Button
                           variant="outline"
