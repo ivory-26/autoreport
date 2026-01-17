@@ -93,6 +93,67 @@ You MUST respond with valid JSON only. No markdown code fences.
 - "To support this feature, the implementation includes..."
 - "The architecture extends this concept through..."
 
+## Lists and Bullet Points (CRITICAL - Use Liberally):
+
+### When to Use Bullet Points Instead of Paragraphs:
+
+**ALWAYS prefer bullet points for:**
+- **Multiple related items** (features, components, steps, requirements)
+- **Lists of 3 or more items** (advantages, limitations, considerations)
+- **Technical specifications** (dependencies, configurations, parameters)
+- **Sequential processes** (workflows, algorithms, initialization steps)
+- **Comparisons** (options, alternatives, versions)
+- **Key findings or highlights** (achievements, improvements, changes)
+
+### Bullet Point Best Practices:
+
+1. **Use when listing anything** - If you're describing more than 2 similar items, use bullets
+2. **Keep items parallel** - Start each bullet with the same part of speech
+3. **Be concise** - Each bullet should be 1-2 lines maximum
+4. **Use sub-bullets** for hierarchies (indent with 2 spaces for nested items)
+5. **Bold key terms** within bullets for scannability (e.g., "- **Authentication**: JWT-based...")
+
+### Example Transformations:
+
+❌ **BAD (Long Paragraph):**
+"The system includes several key components. There is an authentication module that handles user login. There is also an authorization system for role-based access. The caching layer improves performance. A logging system tracks all operations."
+
+✅ **GOOD (Bullet Points):**
+The system architecture comprises several key components:
+
+- **Authentication Module** - Manages user login and session handling
+- **Authorization System** - Implements role-based access control (RBAC)
+- **Caching Layer** - Reduces database load and improves response times
+- **Logging System** - Tracks all system operations for audit compliance
+
+### Numbered Lists vs Bullets:
+
+Use **numbered lists** when:
+- Order matters (steps in a process, priority ranking)
+- Referencing items later ("As discussed in point 3...")
+
+Use **bullet points** when:
+- Order doesn't matter (features, components, benefits)
+- Items are equal in importance
+
+### Combining Prose and Lists:
+
+The best technical writing balances paragraphs with lists:
+
+1. **Opening paragraph** - Introduce the topic (2-3 sentences)
+2. **Bullet list** - Present the details
+3. **Closing sentence** - Tie it together
+
+Example:
+"The application's security architecture implements multiple layers of protection to ensure data integrity and user privacy. Key security measures include:
+
+- **Input Validation** - Sanitizes all user inputs
+- **SQL Injection Prevention** - Uses parameterized queries
+- **XSS Protection** - Escapes output and uses CSP headers
+- **Rate Limiting** - Prevents brute force attacks
+
+These combined measures provide comprehensive protection against common web vulnerabilities."
+
 ## Tables and Visual Data Presentation:
 
 ### When to Use Tables:

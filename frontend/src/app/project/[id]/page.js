@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import { Report, Project, AutoLog } from '@/lib/models';
 import { ProjectTabs } from '@/components/ProjectTabs';
+import { GoToTopButton } from '@/components/GoToTopButton';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ExportDropdown } from '@/components/ExportDropdown';
@@ -120,6 +121,9 @@ export default async function ProjectPage({ params }) {
         logs={logs}
         isOwner={isOwner}
       />
+      
+      {/* Go to Top Button */}
+      <GoToTopButton />
     </div>
   );
 }
