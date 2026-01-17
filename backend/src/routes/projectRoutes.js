@@ -6,7 +6,10 @@
  */
 
 const express = require('express');
+
 const router = express.Router();
+const { aiLimiter } = require('../middleware/rateLimiters');
+const { validate, schemas } = require('../middleware/validators');
 const {
   getTemplates,
   createProject,
@@ -24,19 +27,19 @@ const {
 router.get('/templates', getTemplates);
 
 // Create a new project
-router.post('/', createProject);
+router.post('/', validate(schemas.createProject), createProject);
 
 // Setup GitHub webhook for a project
 router.post('/:projectId/webhook', setupWebhook);
 
-// Generate initial report based on last commit
-router.post('/:projectId/generate-initial', generateInitialReport);
+// Generate initial report based on last commit (Expensive AI op)
+router.post('/:projectId/generate-initial', aiLimiter, generateInitialReport);
 
 // Accept all sections with AI changes (must come before :sectionId routes)
 router.post('/:projectId/sections/accept-all', acceptAllSections);
 
-// Regenerate a specific section's content using AI
-router.post('/:projectId/sections/:sectionId/regenerate', regenerateSection);
+// Regenerate a specific section's content using AI (Expensive AI op)
+router.post('/:projectId/sections/:sectionId/regenerate', aiLimiter, regenerateSection);
 
 // Revert a section to its previous version
 router.post('/:projectId/sections/:sectionId/revert', revertSection);

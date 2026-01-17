@@ -19,9 +19,19 @@ const app = express();
 // 1. Security Headers
 app.use(helmet());
 
-// 2. CORS (Allow Vercel Frontend to talk to Render Backend)
+// 2. Global Rate Limiting
+const { globalLimiter } = require('./middleware/rateLimiters');
+app.use(globalLimiter);
+
+// 3. NoSQL Injection Prevention
+const mongoSanitize = require('express-mongo-sanitize');
+app.use(mongoSanitize());
+
+// 4. CORS (Strict in Production)
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: process.env.NODE_ENV === 'production' 
+      ? process.env.FRONTEND_URL 
+      : (process.env.FRONTEND_URL || 'http://localhost:3000'),
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
 }));

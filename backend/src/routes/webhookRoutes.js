@@ -16,6 +16,7 @@ const {
   requestWebhookRedelivery,
   verifyAndRedeliverIfNeeded
 } = require('../controllers/webhookDeliveryController');
+const { validate, schemas } = require('../middleware/validators');
 
 /**
  * POST /webhooks/github
@@ -63,7 +64,7 @@ router.get('/health', healthCheck);
  * - accessToken: GitHub access token (optional, for fetching latest commit)
  * - commitHash: Specific commit to check (optional, defaults to latest)
  */
-router.post('/verify/:projectId', verifyWebhookDelivery);
+router.post('/verify/:projectId', validate(schemas.verifyWebhook), verifyWebhookDelivery);
 
 /**
  * POST /webhooks/redeliver/:projectId
@@ -74,7 +75,7 @@ router.post('/verify/:projectId', verifyWebhookDelivery);
  * - deliveryId: Specific delivery ID to redeliver (optional, defaults to latest)
  * - hookId: Webhook ID (optional, auto-discovered)
  */
-router.post('/redeliver/:projectId', requestWebhookRedelivery);
+router.post('/redeliver/:projectId', validate(schemas.redeliverWebhook), requestWebhookRedelivery);
 
 /**
  * POST /webhooks/verify-and-redeliver/:projectId
