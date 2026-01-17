@@ -47,6 +47,10 @@ const projectSchema = new mongoose.Schema({
     enum: ['active', 'paused', 'archived'],
     default: 'active'
   },
+  isGeneratingInitialReport: {
+    type: Boolean,
+    default: false
+  },
   // Owner's GitHub username (for display)
   ownerUsername: {
     type: String,

@@ -9,7 +9,8 @@
 
 const Groq = require('groq-sdk');
 const { withTimeout, getTimeoutFromEnv, TimeoutError } = require('./timeout');
-const { ANALYZER_SYSTEM_PROMPT, createAnalyzerUserPrompt } = require('../prompts/analyzerPrompt');
+const { ANALYZER_SYSTEM_PROMPT, createAnalyzerUserPrompt, createChunkedAnalyzerPrompt } = require('../prompts/analyzerPrompt');
+const { chunkDiff, mergeChunkAnalyses, DEFAULT_CHUNK_SIZE } = require('./chunkingService');
 
 // Model configuration - primary and fallback models
 const PRIMARY_MODEL = 'openai/gpt-oss-120b';
@@ -17,6 +18,7 @@ const FALLBACK_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 // Maximum tokens to use for diff (leaving room for prompt and response)
 const MAX_DIFF_TOKENS = 4000; // ~16000 chars assuming 4 chars per token
+const CHUNKING_THRESHOLD = DEFAULT_CHUNK_SIZE; // Use chunking for diffs larger than this
 
 // Initialize Groq client
 let groqClient = null;
@@ -145,19 +147,35 @@ async function analyze({
   diff,
   filesChanged,
   projectContext,
-  templateSections
+  templateSections,
+  onProgress // Optional progress callback for heartbeat
 }) {
-  const timeoutMs = getTimeoutFromEnv(30000);
+  const timeoutMs = Math.max(getTimeoutFromEnv(60000), 60000);
+
+  // Check if diff needs chunking
+  if (diff && diff.length > CHUNKING_THRESHOLD) {
+    console.log(`[Analyzer] Large diff detected (${diff.length} chars), using chunked analysis`);
+    return analyzeChunked({
+      commitHash,
+      commitMessage,
+      author,
+      diff,
+      filesChanged,
+      projectContext,
+      templateSections,
+      onProgress
+    });
+  }
 
   // Helper function to call the API with a specific model
-  async function callWithModel(modelName) {
+  async function callWithModel(modelName, diffContent) {
     const client = initializeClient();
 
     const userPrompt = createAnalyzerUserPrompt({
       commitHash,
       commitMessage,
       author,
-      diff,
+      diff: diffContent,
       filesChanged,
       projectContext,
       templateSections
@@ -202,7 +220,7 @@ async function analyze({
   try {
     // Try with primary model first
     const result = await withTimeout(
-      callWithModel(PRIMARY_MODEL),
+      callWithModel(PRIMARY_MODEL, diff),
       timeoutMs,
       'Analyzer Agent'
     );
@@ -231,7 +249,7 @@ async function analyze({
 
       try {
         const result = await withTimeout(
-          callWithModel(FALLBACK_MODEL),
+          callWithModel(FALLBACK_MODEL, diff),
           timeoutMs,
           'Analyzer Agent (Fallback)'
         );
@@ -293,6 +311,141 @@ async function analyze({
       }
     };
   }
+}
+
+/**
+ * Analyze a large diff using chunking
+ * @param {Object} params - Same as analyze params
+ * @returns {Promise<Object>} - Merged analysis result
+ */
+async function analyzeChunked({
+  commitHash,
+  commitMessage,
+  author,
+  diff,
+  filesChanged,
+  projectContext,
+  templateSections,
+  onProgress
+}) {
+  const timeoutMs = getTimeoutFromEnv(45000); // Longer timeout for chunks
+  const client = initializeClient();
+
+  // Chunk the diff
+  const chunks = chunkDiff(diff);
+  console.log(`[Analyzer] Processing ${chunks.length} chunks for commit ${commitHash?.substring(0, 7)}`);
+
+  const analyses = [];
+  let successfulChunks = 0;
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    
+    // Send progress update
+    if (onProgress) {
+      onProgress({
+        stage: 'analyzing',
+        current: i + 1,
+        total: chunks.length,
+        chunkFiles: chunk.files
+      });
+    }
+
+    console.log(`[Analyzer] Processing chunk ${i + 1}/${chunks.length} (${chunk.content.length} chars, files: ${chunk.files?.join(', ') || 'N/A'})`);
+
+    try {
+      const userPrompt = createChunkedAnalyzerPrompt({
+        commitHash,
+        commitMessage,
+        author,
+        chunkContent: chunk.content,
+        chunkIndex: chunk.index,
+        totalChunks: chunk.total,
+        chunkFiles: chunk.files,
+        filesChanged,
+        projectContext,
+        templateSections
+      });
+
+      const chatCompletion = await withTimeout(
+        client.chat.completions.create({
+          messages: [
+            {
+              role: 'system',
+              content: ANALYZER_SYSTEM_PROMPT + '\n\nThis is a CHUNKED analysis. Focus on the content provided in this chunk. Respond only with valid JSON. No markdown code fences.'
+            },
+            {
+              role: 'user',
+              content: userPrompt
+            }
+          ],
+          model: PRIMARY_MODEL,
+          temperature: 0.3,
+          max_tokens: 2048,
+          response_format: { type: 'json_object' }
+        }),
+        timeoutMs,
+        `Analyzer Agent (Chunk ${i + 1})`
+      );
+
+      const content = chatCompletion.choices[0]?.message?.content || '{}';
+      const parsed = parseAIResponse(content);
+      const validated = validateAnalysisResult(parsed);
+
+      analyses.push({
+        success: true,
+        ...validated
+      });
+      successfulChunks++;
+
+    } catch (chunkError) {
+      console.error(`[Analyzer] Error processing chunk ${i + 1}:`, chunkError.message);
+      // Continue with other chunks even if one fails
+      analyses.push({
+        success: false,
+        error: chunkError.message
+      });
+    }
+
+    // Small delay between chunks to avoid rate limiting
+    if (i < chunks.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+
+  // Merge all successful analyses
+  const successfulAnalyses = analyses.filter(a => a.success);
+  
+  if (successfulAnalyses.length === 0) {
+    console.error('[Analyzer] All chunks failed');
+    return {
+      success: false,
+      error: 'All chunk analyses failed',
+      errorCode: 'CHUNKING_FAILED',
+      ...DEFAULT_ANALYSIS,
+      technicalSummary: `Commit ${commitHash?.substring(0, 7)}: ${commitMessage}`,
+      metadata: {
+        analyzedAt: new Date(),
+        chunksAttempted: chunks.length,
+        chunksSuccessful: 0
+      }
+    };
+  }
+
+  const mergedResult = mergeChunkAnalyses(successfulAnalyses);
+  
+  console.log(`[Analyzer] Merged ${successfulChunks}/${chunks.length} chunk analyses`);
+
+  return {
+    ...mergedResult,
+    metadata: {
+      ...mergedResult.metadata,
+      commitHash,
+      chunksProcessed: successfulChunks,
+      totalChunks: chunks.length,
+      usedChunking: true
+    }
+  };
 }
 
 /**
@@ -358,6 +511,7 @@ function quickAnalyze(commitMessage, filesChanged) {
 
 module.exports = {
   analyze,
+  analyzeChunked,
   quickAnalyze,
   parseAIResponse,
   validateAnalysisResult,

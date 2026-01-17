@@ -12,6 +12,8 @@ const Template = require('../models/Template');
 const { analyze } = require('../services/analyzerAgent');
 const { generateForAllSections } = require('../services/writerAgent');
 const { autoLogger } = require('../services/autoLogger');
+const { analyzeRepositoryForInitialReport } = require('../services/repositoryAnalyzerService');
+const { webhookQueue } = require('../services/queue');
 
 // Fallback templates for when database is empty
 const fallbackTemplates = [
@@ -442,8 +444,8 @@ async function deleteProject(req, res) {
 }
 
 /**
- * Generate initial report based on last commit
- * Fetches the last commit from GitHub and processes it through the AI pipeline
+ * Generate initial report based on repository analysis
+ * Returns 202 Accepted immediately with job ID, processes asynchronously
  * @param {Request} req - Express request
  * @param {Response} res - Express response
  */
@@ -489,167 +491,132 @@ async function generateInitialReport(req, res) {
       });
     }
 
-    // Fetch the last commit from GitHub
-    console.log(`[InitialReport] Fetching last commit from ${owner}/${repo}`);
-    
-    const commitsResponse = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/commits?per_page=1`,
-      {
-        headers: {
-          'Accept': 'application/vnd.github+json',
-          'Authorization': `Bearer ${accessToken}`,
-          'X-GitHub-Api-Version': '2022-11-28'
-        }
-      }
-    );
+    // Check if report is empty (first-time generation)
+    const hasExistingContent = report.sections.some(s => s.content && s.content.trim().length > 0);
 
-    if (!commitsResponse.ok) {
-      const errorData = await commitsResponse.json();
-      console.error('[InitialReport] Failed to fetch commits:', errorData);
-      return res.status(commitsResponse.status).json({
-        success: false,
-        error: 'Failed to fetch commits from GitHub',
-        details: errorData.message
-      });
-    }
-
-    const commits = await commitsResponse.json();
-    
-    if (!commits || commits.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'No commits found in repository'
-      });
-    }
-
-    const lastCommit = commits[0];
-    console.log(`[InitialReport] Last commit: ${lastCommit.sha.substring(0, 7)} - ${lastCommit.commit.message}`);
-
-    // Fetch the commit diff
-    const diffResponse = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/commits/${lastCommit.sha}`,
-      {
-        headers: {
-          'Accept': 'application/vnd.github.diff',
-          'Authorization': `Bearer ${accessToken}`,
-          'X-GitHub-Api-Version': '2022-11-28'
-        }
-      }
-    );
-
-    if (!diffResponse.ok) {
-      console.error('[InitialReport] Failed to fetch diff');
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to fetch commit diff'
-      });
-    }
-
-    const diff = await diffResponse.text();
-    console.log(`[InitialReport] Diff length: ${diff.length} chars`);
-
-    // Fetch files changed in the commit
-    const commitDetailResponse = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/commits/${lastCommit.sha}`,
-      {
-        headers: {
-          'Accept': 'application/vnd.github+json',
-          'Authorization': `Bearer ${accessToken}`,
-          'X-GitHub-Api-Version': '2022-11-28'
-        }
-      }
-    );
-
-    const commitDetail = await commitDetailResponse.json();
-    const filesChanged = (commitDetail.files || []).map(f => ({
-      filename: f.filename,
-      status: f.status,
-      additions: f.additions,
-      deletions: f.deletions,
-      changes: f.changes
-    }));
-
-    console.log(`[InitialReport] Files changed: ${filesChanged.length}`);
-
-    // Stage 1: Analyze the commit
-    console.log('[InitialReport] Starting analysis...');
-    
-    const analysisResult = await analyze({
-      commitHash: lastCommit.sha,
-      commitMessage: lastCommit.commit.message,
-      author: lastCommit.commit.author.name,
-      diff: diff.substring(0, 50000), // Limit diff size
-      filesChanged: filesChanged,
-      projectContext: {
-        name: project.name,
-        techStack: project.settings?.techStack || []
-      },
-      templateSections: template.sections
+    // Enqueue the job and return 202 Accepted immediately
+    const jobId = webhookQueue.enqueue({
+      type: 'initial_report',
+      projectId: project._id.toString(),
+      reportId: report._id.toString(),
+      templateId: template.templateId,
+      owner,
+      repo,
+      accessToken,
+      hasExistingContent,
+      receivedAt: new Date()
     });
 
-    console.log('[InitialReport] Analysis result:', {
-      success: analysisResult.success,
-      changeType: analysisResult.changeType,
-      suggestedSections: analysisResult.suggestedSections?.length || 0
+    // Set flag that project is generating initial report
+    project.isGeneratingInitialReport = true;
+    await project.save();
+
+    console.log(`[InitialReport] Job ${jobId.substring(0, 8)} enqueued, returning 202 Accepted`);
+
+    // Return immediately with job ID - client can poll /api/progress/:jobId for status
+    return res.status(202).json({
+      success: true,
+      message: 'Initial report generation started',
+      jobId,
+      progressUrl: `/api/progress/${jobId}`,
+      streamUrl: `/api/progress/${jobId}/stream`
     });
 
-    if (!analysisResult.success) {
-      return res.status(500).json({
-        success: false,
-        error: 'Analysis failed',
-        details: analysisResult.error
-      });
-    }
+  } catch (error) {
+    console.error('[InitialReport] Error:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to start initial report generation',
+      details: error.message
+    });
+  }
+}
 
-    // Stage 2: Generate content for sections
-    console.log('[InitialReport] Starting content generation...');
+/**
+ * Process initial report job (called by queue processor)
+ * @param {Object} job - Job data from queue
+ */
+async function processInitialReportJob(job) {
+  const { 
+    projectId, 
+    reportId, 
+    templateId, 
+    owner, 
+    repo, 
+    accessToken, 
+    hasExistingContent 
+  } = job.data;
+
+  try {
+    console.log(`[InitialReportJob] Processing job ${job.id.substring(0, 8)}`);
+
+    // Send initial progress
+  webhookQueue.sendProgress(job.id, {
+    stage: 'starting',
+    message: 'Loading project and report data'
+  });
+
+  // Reload project, template and report
+  const project = await Project.findById(projectId);
+  const template = await findTemplate(templateId);
+  const report = await Report.findById(reportId);
+
+  if (!project || !template || !report) {
+    throw new Error('Project, template, or report not found');
+  }
+
+  webhookQueue.sendProgress(job.id, {
+    stage: 'analyzing',
+    message: hasExistingContent ? 'Using commit-based update' : 'Starting repository analysis'
+  });
+
+  if (!hasExistingContent) {
+    // Use comprehensive repository analysis for first-time generation
+    console.log('[InitialReportJob] Report is empty - using full repository analysis');
     
-    const writerResults = await generateForAllSections({
-      analysisResult,
+    const repoAnalysisResult = await analyzeRepositoryForInitialReport({
+      owner,
+      repo,
+      accessToken,
       templateSections: template.sections,
-      report,
       projectMetadata: {
         name: project.name,
         description: project.description || ''
       },
-      commitInfo: {
-        hash: lastCommit.sha,
-        message: lastCommit.commit.message,
-        author: lastCommit.commit.author.name
+      onProgress: (progress) => {
+        webhookQueue.sendProgress(job.id, progress);
       }
     });
 
-    console.log('[InitialReport] Writer results:', writerResults.map(r => ({
-      sectionId: r.sectionId,
-      success: r.success,
-      contentLength: r.content?.length || 0
-    })));
+    if (!repoAnalysisResult.success) {
+      throw new Error('Repository analysis failed');
+    }
 
-    // Update the report with generated content
-    const successfulUpdates = [];
-    const failedUpdates = [];
+    webhookQueue.sendProgress(job.id, {
+      stage: 'saving',
+      message: 'Saving generated content to report'
+    });
 
-    for (const result of writerResults) {
-      if (result.success && result.content) {
-        // Find section in report
+    // Update report sections with generated content
+    let successCount = 0;
+    for (const generated of repoAnalysisResult.generatedContent) {
+      if (generated.success && generated.content) {
         const sectionIndex = report.sections.findIndex(
-          s => s.templateSectionId === result.sectionId
+          s => s.templateSectionId === generated.sectionId
         );
         
         if (sectionIndex !== -1) {
-          report.sections[sectionIndex].content = result.content;
+          report.sections[sectionIndex].content = generated.content;
           report.sections[sectionIndex].lastUpdated = new Date();
           report.sections[sectionIndex].aiLastTouched = true;
-          report.sections[sectionIndex].wordCount = result.content.split(/\s+/).filter(Boolean).length;
+          report.sections[sectionIndex].wordCount = generated.wordCount || 0;
           report.sections[sectionIndex].contributions.push({
-            commitHash: lastCommit.sha,
+            commitHash: 'initial-repo-analysis',
             addedAt: new Date(),
-            contentPreview: result.content.substring(0, 100)
+            contentPreview: generated.content.substring(0, 100)
           });
-          successfulUpdates.push(result);
+          successCount++;
         }
-      } else {
-        failedUpdates.push(result);
       }
     }
 
@@ -658,51 +625,272 @@ async function generateInitialReport(req, res) {
     report.updateWordCount();
     await report.save();
 
-    // Log to AutoLog
-    if (successfulUpdates.length > 0) {
-      await autoLogger.logSuccess({
-        projectId: project._id,
-        reportId: report._id,
-        commitHash: lastCommit.sha,
-        commitMessage: lastCommit.commit.message,
-        author: lastCommit.commit.author.name,
-        result: {
-          sectionTitle: successfulUpdates.map(u => u.sectionTitle).join(', '),
-          sectionId: successfulUpdates[0].sectionId,
-          content: successfulUpdates[0].content,
-          wordCount: successfulUpdates.reduce((sum, u) => sum + (u.wordCount || 0), 0)
-        },
-        pipelineTrace: {
-          type: 'initial_report',
-          triggeredAt: new Date()
-        },
-        analysisResult: {
-          changeType: analysisResult.changeType,
-          impactLevel: analysisResult.impactLevel,
-          semanticTags: analysisResult.semanticTags
-        }
-      });
-    }
-
-    console.log(`[InitialReport] Completed: ${successfulUpdates.length} sections updated`);
-
-    res.status(200).json({
-      success: true,
-      message: 'Initial report generated successfully',
-      stats: {
-        sectionsUpdated: successfulUpdates.length,
-        sectionsFailed: failedUpdates.length,
-        commitProcessed: lastCommit.sha.substring(0, 7)
+    // Log success
+    await autoLogger.logSuccess({
+      projectId: project._id,
+      reportId: report._id,
+      commitHash: 'initial',
+      commitMessage: 'Initial repository analysis',
+      author: 'System',
+      result: {
+        sectionTitle: 'Multiple sections',
+        sectionId: 'initial',
+        content: 'Initial report generated from repository analysis',
+        wordCount: report.metadata.totalWordCount
+      },
+      pipelineTrace: {
+        type: 'initial_repository_analysis',
+        triggeredAt: new Date(),
+        jobId: job.id
+      },
+      analysisResult: {
+        changeType: 'feature',
+        impactLevel: 'major',
+        semanticTags: repoAnalysisResult.stats.techStackDetected
       }
     });
 
-  } catch (error) {
-    console.error('[InitialReport] Error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate initial report',
-      details: error.message
+    webhookQueue.sendProgress(job.id, {
+      stage: 'complete',
+      message: `Initial report generated: ${successCount} sections populated`,
+      result: {
+        sectionsPopulated: successCount,
+        techStackDetected: repoAnalysisResult.stats.techStackDetected
+      }
     });
+
+    console.log(`[InitialReportJob] Completed: ${successCount} sections populated from repository analysis`);
+    return;
+  }
+
+  // Existing content found - use commit-based incremental update
+  console.log('[InitialReportJob] Report has content - using commit-based update');
+  
+  webhookQueue.sendProgress(job.id, {
+    stage: 'fetching',
+    message: 'Fetching latest commit from GitHub'
+  });
+
+  const commitsResponse = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/commits?per_page=1`,
+    {
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${accessToken}`,
+        'X-GitHub-Api-Version': '2022-11-28'
+      }
+    }
+  );
+
+  if (!commitsResponse.ok) {
+    throw new Error('Failed to fetch commits from GitHub');
+  }
+
+  const commits = await commitsResponse.json();
+  
+  if (!commits || commits.length === 0) {
+    throw new Error('No commits found in repository');
+  }
+
+  const lastCommit = commits[0];
+  console.log(`[InitialReportJob] Last commit: ${lastCommit.sha.substring(0, 7)} - ${lastCommit.commit.message}`);
+
+  webhookQueue.sendProgress(job.id, {
+    stage: 'fetching',
+    message: `Fetching diff for commit ${lastCommit.sha.substring(0, 7)}`
+  });
+
+  // Fetch the commit diff
+  const diffResponse = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/commits/${lastCommit.sha}`,
+    {
+      headers: {
+        'Accept': 'application/vnd.github.diff',
+        'Authorization': `Bearer ${accessToken}`,
+        'X-GitHub-Api-Version': '2022-11-28'
+      }
+    }
+  );
+
+  if (!diffResponse.ok) {
+    throw new Error('Failed to fetch commit diff');
+  }
+
+  const diff = await diffResponse.text();
+  console.log(`[InitialReportJob] Diff length: ${diff.length} chars`);
+
+  // Fetch files changed in the commit
+  const commitDetailResponse = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/commits/${lastCommit.sha}`,
+    {
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${accessToken}`,
+        'X-GitHub-Api-Version': '2022-11-28'
+      }
+    }
+  );
+
+  const commitDetail = await commitDetailResponse.json();
+  const filesChanged = (commitDetail.files || []).map(f => ({
+    filename: f.filename,
+    status: f.status,
+    additions: f.additions,
+    deletions: f.deletions,
+    changes: f.changes
+  }));
+
+  console.log(`[InitialReportJob] Files changed: ${filesChanged.length}`);
+
+  webhookQueue.sendProgress(job.id, {
+    stage: 'analyzing',
+    message: 'Analyzing commit changes'
+  });
+
+  // Stage 1: Analyze the commit
+  const analysisResult = await analyze({
+    commitHash: lastCommit.sha,
+    commitMessage: lastCommit.commit.message,
+    author: lastCommit.commit.author.name,
+    diff: diff,
+    filesChanged: filesChanged,
+    projectContext: {
+      name: project.name,
+      techStack: project.settings?.techStack || []
+    },
+    templateSections: template.sections,
+    onProgress: (progress) => {
+      webhookQueue.sendProgress(job.id, progress);
+    }
+  });
+
+  console.log('[InitialReportJob] Analysis result:', {
+    success: analysisResult.success,
+    changeType: analysisResult.changeType,
+    suggestedSections: analysisResult.suggestedSections?.length || 0
+  });
+
+  if (!analysisResult.success) {
+    throw new Error('Analysis failed: ' + (analysisResult.error || 'Unknown error'));
+  }
+
+  webhookQueue.sendProgress(job.id, {
+    stage: 'writing',
+    message: 'Generating content for sections'
+  });
+
+  // Stage 2: Generate content for sections
+  const writerResults = await generateForAllSections({
+    analysisResult,
+    templateSections: template.sections,
+    report,
+    projectMetadata: {
+      name: project.name,
+      description: project.description || ''
+    },
+    commitInfo: {
+      hash: lastCommit.sha,
+      message: lastCommit.commit.message,
+      author: lastCommit.commit.author.name
+    }
+  });
+
+  console.log('[InitialReportJob] Writer results:', writerResults.map(r => ({
+    sectionId: r.sectionId,
+    success: r.success,
+    contentLength: r.content?.length || 0
+  })));
+
+  webhookQueue.sendProgress(job.id, {
+    stage: 'saving',
+    message: 'Saving generated content'
+  });
+
+  // Update the report with generated content
+  const successfulUpdates = [];
+  const failedUpdates = [];
+
+  for (const result of writerResults) {
+    if (result.success && result.content) {
+      const sectionIndex = report.sections.findIndex(
+        s => s.templateSectionId === result.sectionId
+      );
+      
+      if (sectionIndex !== -1) {
+        report.sections[sectionIndex].content = result.content;
+        report.sections[sectionIndex].lastUpdated = new Date();
+        report.sections[sectionIndex].aiLastTouched = true;
+        report.sections[sectionIndex].wordCount = result.content.split(/\s+/).filter(Boolean).length;
+        report.sections[sectionIndex].contributions.push({
+          commitHash: lastCommit.sha,
+          addedAt: new Date(),
+          contentPreview: result.content.substring(0, 100)
+        });
+        successfulUpdates.push(result);
+      }
+    } else {
+      failedUpdates.push(result);
+    }
+  }
+
+  // Save the report
+  report.metadata.lastAIUpdate = new Date();
+  report.updateWordCount();
+  await report.save();
+
+  // Log to AutoLog
+  if (successfulUpdates.length > 0) {
+    await autoLogger.logSuccess({
+      projectId: project._id,
+      reportId: report._id,
+      commitHash: lastCommit.sha,
+      commitMessage: lastCommit.commit.message,
+      author: lastCommit.commit.author.name,
+      result: {
+        sectionTitle: successfulUpdates.map(u => u.sectionTitle).join(', '),
+        sectionId: successfulUpdates[0].sectionId,
+        content: successfulUpdates[0].content,
+        wordCount: successfulUpdates.reduce((sum, u) => sum + (u.wordCount || 0), 0)
+      },
+      pipelineTrace: {
+        type: 'initial_report',
+        triggeredAt: new Date(),
+        jobId: job.id
+      },
+      analysisResult: {
+        changeType: analysisResult.changeType,
+        impactLevel: analysisResult.impactLevel,
+        semanticTags: analysisResult.semanticTags
+      }
+    });
+  }
+
+  webhookQueue.sendProgress(job.id, {
+    stage: 'complete',
+    message: `Report updated: ${successfulUpdates.length} sections modified`,
+    result: {
+      sectionsUpdated: successfulUpdates.length,
+      sectionsFailed: failedUpdates.length,
+      commitProcessed: lastCommit.sha.substring(0, 7)
+    }
+  });
+
+  console.log(`[InitialReportJob] Completed: ${successfulUpdates.length} sections updated`);
+} catch (error) {
+  console.error(`[InitialReportJob] Error in job ${job.id}:`, error.message);
+  throw error;
+} finally {
+  // Always clear the flag regardless of success/fail
+  try {
+    const p = await Project.findById(projectId);
+    if (p) {
+      p.isGeneratingInitialReport = false;
+      await p.save();
+      console.log(`[InitialReportJob] Cleared generating flag for project ${projectId}`);
+    }
+  } catch (err) {
+    console.error('[InitialReportJob] Failed to clear generating flag:', err.message);
+  }
   }
 }
 
@@ -1142,6 +1330,7 @@ module.exports = {
   getProjectById,
   deleteProject,
   generateInitialReport,
+  processInitialReportJob,
   regenerateSection,
   revertSection,
   acceptSection,

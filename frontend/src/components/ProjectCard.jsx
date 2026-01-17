@@ -196,7 +196,12 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
           )}
 
           <div className="flex items-center gap-2 mt-auto pt-2">
-            {project.report ? (
+            {project.isGeneratingInitialReport ? (
+              <Button disabled className="flex-1 h-10 rounded-xl shadow-md" size="sm">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Generating...
+              </Button>
+            ) : project.report ? (
               <Button asChild className="flex-1 h-10 rounded-xl shadow-md transition-all hover:shadow-lg active:scale-95" size="sm">
                 <Link href={`/project/${project.report._id}`}>
                   View Report <ArrowRight className="ml-2 h-4 w-4" />

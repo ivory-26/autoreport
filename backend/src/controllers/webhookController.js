@@ -131,6 +131,7 @@ async function handleGitHubWebhook(req, res) {
 
     // Enqueue the job
     const jobId = webhookQueue.enqueue({
+      type: 'webhook',
       projectId: project._id,
       project: {
         name: project.name,
@@ -146,7 +147,9 @@ async function handleGitHubWebhook(req, res) {
       message: 'Webhook received',
       jobId,
       commitHash: processedPayload.commit.shortHash,
-      queuePosition: webhookQueue.length
+      queuePosition: webhookQueue.length,
+      progressUrl: `/api/progress/${jobId}`,
+      streamUrl: `/api/progress/${jobId}/stream`
     });
 
   } catch (error) {
@@ -170,6 +173,11 @@ async function processWebhookJob(job) {
   };
 
   try {
+    webhookQueue.sendProgress(job.id, {
+      stage: 'starting',
+      message: 'Processing webhook payload'
+    });
+
     // Get the template
     const template = await Template.findOne({ templateId: project.templateId });
     if (!template) {
@@ -182,6 +190,11 @@ async function processWebhookJob(job) {
       // Create a new report based on template
       report = await createReportFromTemplate(projectId, template, project.name);
     }
+
+    webhookQueue.sendProgress(job.id, {
+      stage: 'analyzing',
+      message: `Analyzing commit ${commit.hash?.substring(0, 7)}`
+    });
 
     // Stage 1: Analyze the diff
     console.log('[Pipeline] Starting analysis for commit:', commit.hash?.substring(0, 7));
@@ -198,7 +211,10 @@ async function processWebhookJob(job) {
         name: project.name,
         techStack: project.settings?.techStack || []
       },
-      templateSections: template.sections
+      templateSections: template.sections,
+      onProgress: (progress) => {
+        webhookQueue.sendProgress(job.id, progress);
+      }
     });
 
     console.log('[Pipeline] Analysis result:', JSON.stringify({
@@ -210,6 +226,11 @@ async function processWebhookJob(job) {
 
     pipelineTrace.analysisCompleted = new Date();
     pipelineTrace.writingStarted = new Date();
+
+    webhookQueue.sendProgress(job.id, {
+      stage: 'writing',
+      message: 'Generating content for report sections'
+    });
 
     // Stage 2: Generate content for relevant sections
     console.log('[Pipeline] Starting writer for sections...');
@@ -237,6 +258,11 @@ async function processWebhookJob(job) {
     })));
 
     pipelineTrace.writingCompleted = new Date();
+
+    webhookQueue.sendProgress(job.id, {
+      stage: 'saving',
+      message: 'Saving updates to database'
+    });
 
     // Update the report with generated content
     const successfulUpdates = [];
@@ -449,8 +475,8 @@ function healthCheck(req, res) {
   });
 }
 
-// Set the processor for the queue
-webhookQueue.setProcessor(processWebhookJob);
+// Set the processor for the queue - REMOVED (Handled in app.js)
+// webhookQueue.setProcessor(processWebhookJob);
 
 module.exports = {
   handleGitHubWebhook,

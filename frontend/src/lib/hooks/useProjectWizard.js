@@ -194,7 +194,6 @@ export function useProjectWizard() {
           // Update the createdProject with report data
           setCreatedProject(prev => ({
             ...prev,
-            generatingInitialReport: false,
             report: {
               _id: data.report._id,
               title: data.report.title,
@@ -209,19 +208,78 @@ export function useProjectWizard() {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
-      // If we didn't find a report, just mark generation as complete
-      setCreatedProject(prev => ({
-        ...prev,
-        generatingInitialReport: false
-      }));
+      // If we didn't find a report, keep previous state (don't mark as complete/false)
+      // The polling mechanism will handle the completion state
     } catch (err) {
       console.warn('[Wizard] Error fetching latest report:', err);
-      setCreatedProject(prev => ({
-        ...prev,
-        generatingInitialReport: false
-      }));
     }
   }, []);
+
+  const [generationProgress, setGenerationProgress] = useState(null);
+
+  /**
+   * Poll job progress until completion
+   */
+  const pollJobProgress = useCallback(async (jobId, projectId) => {
+    try {
+      console.log(`[Wizard] Starting polling for job ${jobId}`);
+      
+      const poll = async () => {
+        const response = await fetch(`/api/progress/${jobId}`);
+        if (!response.ok) return false;
+        
+        const data = await response.json();
+        const { job } = data;
+        
+        if (!job) return false;
+        
+        // Update progress state
+        const lastProgress = job.progress && job.progress.length > 0 
+          ? job.progress[job.progress.length - 1] 
+          : { stage: 'queued', message: 'Waiting in queue...' };
+          
+        setGenerationProgress({
+          status: job.status,
+          stage: lastProgress.stage,
+          message: lastProgress.message,
+          percent: lastProgress.percent || 0
+        });
+
+        if (job.status === 'completed' || job.status === 'failed' || job.status === 'dead') {
+          return true; // Stop polling
+        }
+        
+        return false; // Continue polling
+      };
+
+      // Poll every 2 seconds
+      const intervalId = setInterval(async () => {
+        const isComplete = await poll();
+        if (isComplete) {
+          clearInterval(intervalId);
+          // Notify user via browser alert
+          if (typeof window !== 'undefined') {
+            alert('Your initial report has been generated successfully!');
+          }
+          
+          // Fetch final report data
+          fetchLatestReport(projectId);
+          
+          setCreatedProject(prev => ({
+            ...prev,
+            generatingInitialReport: false,
+            generationComplete: true
+          }));
+        }
+      }, 2000);
+      
+      // Initial poll
+      poll();
+      
+    } catch (err) {
+      console.error('[Wizard] Error polling job:', err);
+    }
+  }, [fetchLatestReport]);
 
   /**
    * Create the project and generate initial report
@@ -235,6 +293,7 @@ export function useProjectWizard() {
     try {
       setIsLoading(true);
       setError(null);
+      setGenerationProgress({ status: 'starting', message: 'Creating project...' });
 
       const [repoOwner, repoName] = selectedRepo.fullName.split('/');
 
@@ -263,12 +322,11 @@ export function useProjectWizard() {
         throw new Error(data.error || 'Failed to create project');
       }
 
-      // Step 2: Generate initial report from last commit (async, don't block)
+      // Step 2: Generate initial report from last commit
       const projectId = data.project.id;
       console.log('[Wizard] Triggering initial report generation for project:', projectId);
       
-      // Fire and forget - don't wait for this to complete
-      fetch(`/api/projects/${projectId}/generate-initial`, {
+      const genResponse = await fetch(`/api/projects/${projectId}/generate-initial`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -277,22 +335,24 @@ export function useProjectWizard() {
           owner: repoOwner,
           repo: repoName
         })
-      }).then(res => res.json()).then(result => {
-        if (result.success) {
-          console.log('[Wizard] Initial report generation completed:', result.stats);
-          // Fetch the report after generation completes
-          fetchLatestReport(projectId);
-        } else {
-          console.warn('[Wizard] Initial report generation failed:', result.error);
-        }
-      }).catch(err => {
-        console.warn('[Wizard] Initial report generation error:', err);
       });
+      
+      const genResult = await genResponse.json();
+      
+      if (genResult.success && genResult.jobId) {
+        console.log('[Wizard] Initial report generation started, job:', genResult.jobId);
+        // Start polling for progress
+        pollJobProgress(genResult.jobId, projectId);
+      } else {
+        console.warn('[Wizard] Initial report generation failed to start:', genResult.error);
+        setGenerationProgress({ status: 'failed', message: 'Failed to start generation' });
+      }
 
       // Add generation status to created project
       setCreatedProject({
         ...data,
-        generatingInitialReport: true
+        generatingInitialReport: true,
+        generationComplete: false
       });
       setStep(4);
       return true;
@@ -303,7 +363,7 @@ export function useProjectWizard() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedRepo, selectedTemplate, projectName, fetchLatestReport]);
+  }, [selectedRepo, selectedTemplate, projectName, pollJobProgress]);
 
   /**
    * Filter repos by search query
@@ -343,6 +403,7 @@ export function useProjectWizard() {
     prevStep,
     createProject,
     fetchLatestReport,
-    setError
+    setError,
+    generationProgress
   };
 }

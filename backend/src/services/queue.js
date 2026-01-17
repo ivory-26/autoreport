@@ -3,9 +3,11 @@
  * 
  * In-memory queue for processing GitHub webhooks sequentially.
  * Prevents race conditions when multiple commits arrive simultaneously.
+ * Includes progress tracking and heartbeat support for long-running jobs.
  */
 
 const crypto = require('crypto');
+const EventEmitter = require('events');
 const { autoLogger, STAGES } = require('./autoLogger');
 
 /**
@@ -19,13 +21,21 @@ const JOB_STATUS = {
   DEAD: 'dead'
 };
 
-class WebhookQueue {
+class WebhookQueue extends EventEmitter {
   constructor() {
+    super();
     this.queue = [];
     this.processing = false;
     this.concurrency = 1; // Process one at a time (per PRD NFR-04)
     this.maxAttempts = 3;
     this.processor = null; // Set via setProcessor()
+    
+    // Job history for completed/failed jobs (for status queries)
+    this.jobHistory = new Map();
+    this.maxHistorySize = 100;
+    
+    // Active SSE connections listening for job progress
+    this.progressListeners = new Map(); // jobId -> Set of response objects
     
     // Stats tracking
     this.stats = {
@@ -68,10 +78,117 @@ class WebhookQueue {
     this.queue.push(job);
     console.log(`[Queue] Job ${jobId.substring(0, 8)} enqueued. Queue size: ${this.queue.length}`);
 
+    // Emit job enqueued event
+    this.emit('jobEnqueued', { jobId, queuePosition: this.queue.length });
+
     // Start processing if not already running
     this.process();
 
     return jobId;
+  }
+
+  /**
+   * Send a progress update for a job (heartbeat)
+   * @param {string} jobId - Job ID
+   * @param {Object} progress - Progress data
+   */
+  sendProgress(jobId, progress) {
+    const job = this.getJob(jobId) || this.jobHistory.get(jobId);
+    if (!job) return;
+
+    const progressData = {
+      jobId,
+      timestamp: new Date().toISOString(),
+      ...progress
+    };
+
+    // Store progress in job
+    if (!job.progress) job.progress = [];
+    job.progress.push(progressData);
+
+    // Emit progress event
+    this.emit('progress', progressData);
+
+    // Send to any SSE listeners
+    const listeners = this.progressListeners.get(jobId);
+    if (listeners) {
+      const sseData = `data: ${JSON.stringify(progressData)}\n\n`;
+      for (const res of listeners) {
+        try {
+          res.write(sseData);
+        } catch (e) {
+          // Connection closed, remove listener
+          listeners.delete(res);
+        }
+      }
+    }
+
+    console.log(`[Queue] Progress: Job ${jobId.substring(0, 8)} - ${progress.stage || 'update'}: ${progress.message || JSON.stringify(progress)}`);
+  }
+
+  /**
+   * Register an SSE connection for job progress
+   * @param {string} jobId - Job ID
+   * @param {Object} res - Express response object
+   */
+  addProgressListener(jobId, res) {
+    if (!this.progressListeners.has(jobId)) {
+      this.progressListeners.set(jobId, new Set());
+    }
+    this.progressListeners.get(jobId).add(res);
+    console.log(`[Queue] SSE listener added for job ${jobId.substring(0, 8)}`);
+  }
+
+  /**
+   * Remove an SSE connection
+   * @param {string} jobId - Job ID
+   * @param {Object} res - Express response object
+   */
+  removeProgressListener(jobId, res) {
+    const listeners = this.progressListeners.get(jobId);
+    if (listeners) {
+      listeners.delete(res);
+      if (listeners.size === 0) {
+        this.progressListeners.delete(jobId);
+      }
+    }
+  }
+
+  /**
+   * Store a completed/failed job in history
+   * @param {Object} job - The job to store
+   */
+  addToHistory(job) {
+    // Remove from progress listeners
+    const listeners = this.progressListeners.get(job.id);
+    if (listeners) {
+      // Send completion event to all listeners
+      const sseData = `data: ${JSON.stringify({ 
+        jobId: job.id, 
+        stage: 'complete',
+        status: job.status,
+        timestamp: new Date().toISOString()
+      })}\n\n`;
+      for (const res of listeners) {
+        try {
+          res.write(sseData);
+          res.end();
+        } catch (e) { /* ignore */ }
+      }
+      this.progressListeners.delete(job.id);
+    }
+
+    // Add to history
+    this.jobHistory.set(job.id, {
+      ...job,
+      archivedAt: new Date()
+    });
+
+    // Prune old history
+    if (this.jobHistory.size > this.maxHistorySize) {
+      const oldestKey = this.jobHistory.keys().next().value;
+      this.jobHistory.delete(oldestKey);
+    }
   }
 
   /**
@@ -112,8 +229,9 @@ class WebhookQueue {
 
         console.log(`[Queue] Job ${job.id.substring(0, 8)} completed in ${job.completedAt - job.startedAt}ms`);
 
-        // Remove completed job
+        // Remove completed job and add to history
         this.queue.shift();
+        this.addToHistory(job);
 
       } catch (error) {
         job.status = JOB_STATUS.FAILED;
@@ -145,8 +263,9 @@ class WebhookQueue {
             });
           }
 
-          // Remove dead job
+          // Remove dead job and add to history
           this.queue.shift();
+          this.addToHistory(job);
         } else {
           // Move to back of queue for retry
           this.queue.shift();
@@ -184,12 +303,17 @@ class WebhookQueue {
   }
 
   /**
-   * Get a specific job by ID
+   * Get a specific job by ID (checks queue and history)
    * @param {string} jobId - Job ID
    * @returns {Object|null} - Job or null
    */
   getJob(jobId) {
-    return this.queue.find(j => j.id === jobId) || null;
+    // Check active queue first
+    const queuedJob = this.queue.find(j => j.id === jobId);
+    if (queuedJob) return queuedJob;
+    
+    // Check history for completed/failed jobs
+    return this.jobHistory.get(jobId) || null;
   }
 
   /**

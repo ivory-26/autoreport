@@ -163,7 +163,74 @@ ${truncateDiff(diff)}
 Analyze this commit and provide the structured JSON output. Focus on extracting meaningful information that will help generate accurate report content.`;
 }
 
+/**
+ * Creates the user prompt for chunked analysis
+ * @param {Object} params
+ * @param {string} params.commitHash - The commit hash
+ * @param {string} params.commitMessage - The commit message
+ * @param {string} params.author - The commit author
+ * @param {string} params.chunkContent - The chunk content to analyze
+ * @param {number} params.chunkIndex - Current chunk index (0-based)
+ * @param {number} params.totalChunks - Total number of chunks
+ * @param {Array} params.chunkFiles - Files included in this chunk
+ * @param {Array} params.filesChanged - All files changed in commit
+ * @param {Object} params.projectContext - Project context
+ * @param {Array} params.templateSections - Template sections for routing
+ * @returns {string} The formatted user prompt
+ */
+function createChunkedAnalyzerPrompt({
+  commitHash,
+  commitMessage,
+  author,
+  chunkContent,
+  chunkIndex,
+  totalChunks,
+  chunkFiles,
+  filesChanged,
+  projectContext,
+  templateSections
+}) {
+  // Format template sections for the prompt
+  const sectionsInfo = templateSections.map(s => ({
+    id: s.id,
+    title: s.title,
+    keywords: s.aiHints?.keywords || [],
+    codePatterns: s.aiHints?.codePatterns || []
+  }));
+
+  const chunkInfo = totalChunks > 1 
+    ? `\n## CHUNK INFORMATION
+**This is chunk ${chunkIndex + 1} of ${totalChunks}** - Analyze ONLY the code shown in this chunk.
+Files in this chunk: ${chunkFiles?.join(', ') || 'Various'}
+Note: Other chunks contain additional changes. Focus on what's visible here.`
+    : '';
+
+  return `## Commit Information
+- Hash: ${commitHash}
+- Message: ${commitMessage}
+- Author: ${author}
+${chunkInfo}
+
+## Project Context
+- Name: ${projectContext.name || 'Unknown'}
+- Tech Stack: ${projectContext.techStack?.join(', ') || 'Not specified'}
+
+## All Files Changed in Commit (${filesChanged.length} files total)
+${filesChanged.slice(0, 20).map(f => `- ${f}`).join('\n')}${filesChanged.length > 20 ? `\n... and ${filesChanged.length - 20} more files` : ''}
+
+## Available Report Sections
+${JSON.stringify(sectionsInfo, null, 2)}
+
+## Git Diff (Chunk ${chunkIndex + 1}/${totalChunks})
+\`\`\`diff
+${chunkContent}
+\`\`\`
+
+Analyze this chunk and provide the structured JSON output. Focus on extracting meaningful information from the code visible in THIS chunk. Your analysis will be merged with analyses from other chunks.`;
+}
+
 module.exports = {
   ANALYZER_SYSTEM_PROMPT,
-  createAnalyzerUserPrompt
+  createAnalyzerUserPrompt,
+  createChunkedAnalyzerPrompt
 };

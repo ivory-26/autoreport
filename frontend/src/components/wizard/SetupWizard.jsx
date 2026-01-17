@@ -52,13 +52,12 @@ function StepIndicator({ currentStep, steps }) {
       {steps.map((step, index) => (
         <div key={step.id} className="flex items-center">
           <div
-            className={`flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all ${
-              currentStep > index + 1
-                ? 'bg-primary border-primary text-primary-foreground'
-                : currentStep === index + 1
+            className={`flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all ${currentStep > index + 1
+              ? 'bg-primary border-primary text-primary-foreground'
+              : currentStep === index + 1
                 ? 'border-primary text-primary'
                 : 'border-muted text-muted-foreground'
-            }`}
+              }`}
           >
             {currentStep > index + 1 ? (
               <CheckCircle2 className="h-4 w-4" />
@@ -68,9 +67,8 @@ function StepIndicator({ currentStep, steps }) {
           </div>
           {index < steps.length - 1 && (
             <div
-              className={`w-12 h-0.5 mx-1 transition-all ${
-                currentStep > index + 1 ? 'bg-primary' : 'bg-muted'
-              }`}
+              className={`w-12 h-0.5 mx-1 transition-all ${currentStep > index + 1 ? 'bg-primary' : 'bg-muted'
+                }`}
             />
           )}
         </div>
@@ -82,15 +80,15 @@ function StepIndicator({ currentStep, steps }) {
 /**
  * Repository selection step
  */
-function RepoSelectionStep({ 
-  repos, 
-  selectedRepo, 
-  onSelect, 
-  isLoading, 
-  hasMore, 
+function RepoSelectionStep({
+  repos,
+  selectedRepo,
+  onSelect,
+  isLoading,
+  hasMore,
   onLoadMore,
   searchQuery,
-  onSearchChange 
+  onSearchChange
 }) {
   return (
     <div className="space-y-4">
@@ -116,11 +114,10 @@ function RepoSelectionStep({
             repos.map((repo) => (
               <Card
                 key={repo.id}
-                className={`cursor-pointer transition-all hover:shadow-md ${
-                  selectedRepo?.id === repo.id
-                    ? 'border-primary ring-2 ring-primary/20'
-                    : 'hover:border-primary/50'
-                }`}
+                className={`cursor-pointer transition-all hover:shadow-md ${selectedRepo?.id === repo.id
+                  ? 'border-primary ring-2 ring-primary/20'
+                  : 'hover:border-primary/50'
+                  }`}
                 onClick={() => onSelect(repo)}
               >
                 <CardContent className="p-3">
@@ -194,7 +191,7 @@ function RepoSelectionStep({
  */
 function TemplateSelectionStep({ templates, selectedTemplate, onSelect, isLoading }) {
   console.log('[TemplateSelectionStep] templates:', templates, 'isLoading:', isLoading);
-  
+
   return (
     <ScrollArea className="h-[300px] pr-4">
       <div className="space-y-3">
@@ -208,11 +205,10 @@ function TemplateSelectionStep({ templates, selectedTemplate, onSelect, isLoadin
           templates.map((template) => (
             <Card
               key={template.id}
-              className={`cursor-pointer transition-all hover:shadow-md ${
-                selectedTemplate?.id === template.id
-                  ? 'border-primary ring-2 ring-primary/20'
-                  : 'hover:border-primary/50'
-              }`}
+              className={`cursor-pointer transition-all hover:shadow-md ${selectedTemplate?.id === template.id
+                ? 'border-primary ring-2 ring-primary/20'
+                : 'hover:border-primary/50'
+                }`}
               onClick={() => onSelect(template)}
             >
               <CardContent className="p-3">
@@ -254,11 +250,11 @@ function TemplateSelectionStep({ templates, selectedTemplate, onSelect, isLoadin
 /**
  * Review step
  */
-function ReviewStep({ 
-  selectedRepo, 
-  selectedTemplate, 
-  projectName, 
-  onProjectNameChange 
+function ReviewStep({
+  selectedRepo,
+  selectedTemplate,
+  projectName,
+  onProjectNameChange
 }) {
   return (
     <div className="space-y-4">
@@ -320,7 +316,7 @@ function ReviewStep({
           <div className="text-sm">
             <p className="font-medium">What happens next?</p>
             <p className="text-muted-foreground mt-1">
-              We&apos;ll create your project and set up a GitHub webhook. Every time you push code, 
+              We&apos;ll create your project and set up a GitHub webhook. Every time you push code,
               AutoReport will automatically analyze your changes and update your documentation.
             </p>
           </div>
@@ -333,7 +329,7 @@ function ReviewStep({
 /**
  * Success step with inline collaborator invitations
  */
-function SuccessStep({ createdProject, onClose }) {
+function SuccessStep({ createdProject, onClose, generationProgress }) {
   const router = useRouter();
   const [inviteUsername, setInviteUsername] = useState('');
   const [inviteRole, setInviteRole] = useState('editor');
@@ -343,10 +339,10 @@ function SuccessStep({ createdProject, onClose }) {
 
   const handleInvite = async () => {
     if (!inviteUsername.trim() || !createdProject?.project?.id) return;
-    
+
     setIsInviting(true);
     setInviteError(null);
-    
+
     try {
       const response = await fetch('/api/invitations/send', {
         method: 'POST',
@@ -357,13 +353,13 @@ function SuccessStep({ createdProject, onClose }) {
           role: inviteRole,
         }),
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || 'Failed to send invitation');
       }
-      
+
       setInvitedMembers(prev => [...prev, { username: inviteUsername.trim(), role: inviteRole }]);
       setInviteUsername('');
     } catch (error) {
@@ -415,13 +411,23 @@ function SuccessStep({ createdProject, onClose }) {
               <div className="h-4 w-4 mt-0.5">
                 <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
               </div>
-              <div className="text-left text-sm">
+              <div className="text-left text-sm w-full">
                 <p className="font-medium text-sm text-blue-600 dark:text-blue-400">
-                  Generating Initial Report
+                  {generationProgress?.stage
+                    ? `Generating Report: ${generationProgress.stage.charAt(0).toUpperCase() + generationProgress.stage.slice(1)}`
+                    : 'Generating Initial Report'}
                 </p>
                 <p className="text-muted-foreground text-xs mt-0.5">
-                  AutoReport is analyzing your last commit and writing initial content. This may take a moment.
+                  {generationProgress?.message || 'Analyzing your repository and generating content. This can take 1-3 minutes. We will alert you when it is ready.'}
                 </p>
+                {generationProgress?.percent > 0 && (
+                  <div className="w-full bg-blue-100 dark:bg-blue-900 h-1.5 rounded-full mt-2 overflow-hidden">
+                    <div
+                      className="bg-blue-600 h-full transition-all duration-500"
+                      style={{ width: `${generationProgress.percent}%` }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -458,8 +464,8 @@ function SuccessStep({ createdProject, onClose }) {
               )}
               <div className="text-left text-sm">
                 <p className="font-medium text-sm">
-                  {createdProject.webhook.success 
-                    ? 'Webhook Configured' 
+                  {createdProject.webhook.success
+                    ? 'Webhook Configured'
                     : 'Manual Webhook Setup Required'}
                 </p>
                 <p className="text-muted-foreground text-xs mt-0.5">
@@ -485,11 +491,11 @@ function SuccessStep({ createdProject, onClose }) {
               Invite Team Members
             </p>
           </div>
-          
+
           <p className="text-sm text-muted-foreground">
             Add collaborators to your project. They&apos;ll receive an invitation to accept.
           </p>
-          
+
           {/* Invite Form */}
           <div className="flex gap-2">
             <input
@@ -523,11 +529,11 @@ function SuccessStep({ createdProject, onClose }) {
               )}
             </Button>
           </div>
-          
+
           {inviteError && (
             <p className="text-sm text-destructive">{inviteError}</p>
           )}
-          
+
           {/* Invited Members List */}
           {invitedMembers.length > 0 && (
             <div className="space-y-2 pt-2 border-t">
@@ -549,7 +555,7 @@ function SuccessStep({ createdProject, onClose }) {
         <Button variant="outline" onClick={handleGoToDashboard}>
           Go to Dashboard
         </Button>
-        {createdProject?.report?._id && (
+        {createdProject?.report?._id && !createdProject?.generatingInitialReport && (
           <Button onClick={handleViewReport} className="gap-2 bg-blue-600 hover:bg-blue-700">
             View Report
             <FileText className="h-4 w-4" />
@@ -650,6 +656,7 @@ export function SetupWizard({ trigger }) {
               <SuccessStep
                 createdProject={wizard.createdProject}
                 onClose={wizard.closeWizard}
+                generationProgress={wizard.generationProgress}
               />
             )}
           </div>
@@ -669,7 +676,7 @@ export function SetupWizard({ trigger }) {
               {wizard.step < 3 ? (
                 <Button
                   onClick={wizard.nextStep}
-                  disabled={wizard.isLoading || 
+                  disabled={wizard.isLoading ||
                     (wizard.step === 1 && !wizard.selectedRepo) ||
                     (wizard.step === 2 && !wizard.selectedTemplate)
                   }

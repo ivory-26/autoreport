@@ -17,6 +17,19 @@ const IGNORED_PATTERNS = [
   /composer\.lock$/,
   /Pipfile\.lock$/,
   
+  // Config files (not meaningful for report content)
+  /^package\.json$/,
+  /^tsconfig\.json$/,
+  /^\.eslintrc.*/,
+  /^\.prettierrc.*/,
+  /^jest\.config\.(js|ts|json)$/,
+  /^babel\.config\.(js|json)$/,
+  /^webpack\.config\.(js|ts)$/,
+  /^vite\.config\.(js|ts)$/,
+  /^next\.config\.(js|mjs)$/,
+  /^tailwind\.config\.(js|ts)$/,
+  /^postcss\.config\.(js|cjs)$/,
+  
   // Dependencies
   /^node_modules\//,
   /^vendor\//,
@@ -69,6 +82,27 @@ const IGNORED_PATTERNS = [
   // Logs
   /\.log$/,
   /^logs\//
+];
+
+// High priority files that should be processed first and given more weight
+const PRIORITY_FILES = [
+  { pattern: /^README\.md$/i, importance: 100 },
+  { pattern: /^README$/i, importance: 95 },
+  { pattern: /^CHANGELOG\.md$/i, importance: 90 },
+  { pattern: /^docs\/.+\.md$/i, importance: 85 },
+  { pattern: /^src\/index\.(js|ts|jsx|tsx)$/, importance: 80 },
+  { pattern: /^src\/app\.(js|ts|jsx|tsx)$/, importance: 80 },
+  { pattern: /^src\/main\.(js|ts|jsx|tsx)$/, importance: 80 },
+  { pattern: /^index\.(js|ts|jsx|tsx)$/, importance: 75 },
+  { pattern: /^app\.(js|ts|jsx|tsx)$/, importance: 75 },
+  { pattern: /^server\.(js|ts)$/, importance: 70 },
+  { pattern: /\/routes\/.+\.(js|ts)$/, importance: 65 },
+  { pattern: /\/controllers\/.+\.(js|ts)$/, importance: 65 },
+  { pattern: /\/services\/.+\.(js|ts)$/, importance: 60 },
+  { pattern: /\/models\/.+\.(js|ts)$/, importance: 60 },
+  { pattern: /\/components\/.+\.(jsx|tsx)$/, importance: 55 },
+  { pattern: /\/pages\/.+\.(jsx|tsx)$/, importance: 55 },
+  { pattern: /\/api\/.+\.(js|ts)$/, importance: 65 },
 ];
 
 // Patterns that might be noise but could be significant
@@ -329,6 +363,66 @@ function processWebhookPayload(payload, diff = '') {
   };
 }
 
+/**
+ * Get the importance score for a file (0-100)
+ * Higher scores indicate more important files for report generation
+ * @param {string} filePath - The file path to score
+ * @returns {number} - Importance score (0-100)
+ */
+function getFileImportance(filePath) {
+  // Check against priority patterns
+  for (const { pattern, importance } of PRIORITY_FILES) {
+    if (pattern.test(filePath)) {
+      return importance;
+    }
+  }
+
+  // Check if it's in a test directory (lower importance)
+  if (filePath.includes('test') || filePath.includes('spec') || filePath.includes('__tests__')) {
+    return 20;
+  }
+
+  // Source code files get moderate importance
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  const codeExtensions = ['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'go', 'rs', 'rb', 'php'];
+  if (codeExtensions.includes(ext)) {
+    return 40;
+  }
+
+  // Style files
+  if (['css', 'scss', 'sass', 'less'].includes(ext)) {
+    return 30;
+  }
+
+  // Default importance
+  return 25;
+}
+
+/**
+ * Sort files by importance (highest first)
+ * @param {Array<{path: string, action: string}>} files - Files to sort
+ * @returns {Array<{path: string, action: string, importance: number}>} - Sorted files with importance scores
+ */
+function sortFilesByImportance(files) {
+  return files
+    .map(file => ({
+      ...file,
+      importance: getFileImportance(file.path)
+    }))
+    .sort((a, b) => b.importance - a.importance);
+}
+
+/**
+ * Filter files to get only the most important ones for processing
+ * @param {Array<{path: string}>} files - Files to filter
+ * @param {number} maxFiles - Maximum number of files to return
+ * @returns {Array<{path: string, importance: number}>} - Top important files
+ */
+function getTopImportantFiles(files, maxFiles = 10) {
+  const sorted = sortFilesByImportance(files);
+  return sorted.slice(0, maxFiles);
+}
+
 module.exports = {
   parseGitHubPushPayload,
   filterAndCategorizeFiles,
@@ -337,5 +431,9 @@ module.exports = {
   processWebhookPayload,
   shouldIgnoreFile,
   getFileCategory,
-  IGNORED_PATTERNS
+  getFileImportance,
+  sortFilesByImportance,
+  getTopImportantFiles,
+  IGNORED_PATTERNS,
+  PRIORITY_FILES
 };

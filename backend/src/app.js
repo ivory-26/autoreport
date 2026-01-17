@@ -7,6 +7,7 @@ const morgan = require('morgan');
 const webhookRoutes = require('./routes/webhookRoutes');
 const projectRoutes = require('./routes/projectRoutes');
 const invitationRoutes = require('./routes/invitationRoutes');
+const progressRoutes = require('./routes/progressRoutes');
 
 // Import seed function for auto-seeding templates
 const { seedTemplates } = require('./seeds/templates');
@@ -54,12 +55,39 @@ app.use('/api/projects', projectRoutes);
 // Invitation/collaboration routes
 app.use('/api/invitations', invitationRoutes);
 
+// Progress monitoring routes (SSE + polling for job status)
+app.use('/api/progress', progressRoutes);
+
+// --- Queue processor import ---
+const { webhookQueue } = require('./services/queue');
+const { processInitialReportJob } = require('./controllers/projectController');
+const { processWebhookJob } = require('./controllers/webhookController');
+
 // --- Auto-seed templates on startup ---
 async function initializeApp() {
     try {
         // Seed default templates if none exist
         await seedTemplates();
+        
+        // Register queue processor for handling different job types
+        webhookQueue.setProcessor(async (job) => {
+            const jobType = job.data?.type || 'webhook';
+            
+            console.log(`[Queue] Processing job ${job.id.substring(0, 8)} of type: ${jobType}`);
+            
+            switch (jobType) {
+                case 'initial_report':
+                    await processInitialReportJob(job);
+                    break;
+                case 'webhook':
+                default:
+                    await processWebhookJob(job);
+                    break;
+            }
+        });
+        
         console.log('✅ App initialization complete');
+        console.log('📋 Queue processor registered');
     } catch (error) {
         console.error('⚠️ App initialization warning:', error.message);
         // Don't throw - seeding failure shouldn't prevent app from starting

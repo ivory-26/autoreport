@@ -129,9 +129,14 @@ async function generate({
   analysisResult,
   targetSection,
   projectMetadata,
-  commitInfo
+  commitInfo,
+  repoContext, // Optional: for initial generation
+  allSections   // Optional: template sections for context
 }) {
-  const timeoutMs = getTimeoutFromEnv(30000);
+  // Force a higher timeout for writer agent regardless of global env settings if they are too low
+  const timeoutMs = Math.max(getTimeoutFromEnv(120000), 120000); 
+
+  const sectionTitle = targetSection.title || targetSection.name || "Report Section";
 
   // Helper function to call the API with a specific model
   async function callWithModel(modelName) {
@@ -141,7 +146,9 @@ async function generate({
       analysisResult,
       targetSection,
       projectMetadata,
-      commitInfo
+      commitInfo,
+      repoContext,
+      allSections
     });
 
     const chatCompletion = await client.chat.completions.create({
@@ -190,7 +197,7 @@ async function generate({
     const parsed = parseWriterResponse(result);
     const validated = validateWriterResult(parsed, targetSection);
 
-    console.log(`[Writer] Generated ${validated.wordCount} words for section "${targetSection.title}" using ${PRIMARY_MODEL}`);
+    console.log(`[Writer] Generated ${validated.wordCount} words for section "${sectionTitle}" using ${PRIMARY_MODEL}`);
 
     return {
       success: true,
@@ -513,13 +520,24 @@ async function generateForAllSections({
       continue;
     }
     
-    const result = await generate({
-      analysisResult,
-      targetSection,
-      projectMetadata,
-      commitInfo
-    });
-    results.push(result);
+    try {
+      const result = await generate({
+        analysisResult,
+        targetSection,
+        projectMetadata,
+        commitInfo,
+        allSections: templateSections // Pass all sections for context
+      });
+      results.push(result);
+    } catch (err) {
+      console.error(`[Writer] Failed to generate for section ${targetSection.title}:`, err.message);
+      results.push({
+        success: false,
+        sectionId: targetSection.id,
+        sectionTitle: targetSection.title,
+        error: err.message
+      });
+    }
   }
 
   return results;
