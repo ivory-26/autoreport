@@ -54,7 +54,10 @@ function SectionContent({ section, onDismissHighlight, onRegenerate, onRevert, o
         }`}
     >
       {/* Content */}
-      <div className={`prose prose-sm dark:prose-invert max-w-none px-4 py-3 ${hasNewContent ? 'border-l-4 border-green-500 rounded-l-none' : ''}`}>
+      <div
+        className={`prose prose-sm dark:prose-invert max-w-none px-4 py-3 ${hasNewContent ? 'border-l-4 border-green-500 rounded-l-none' : ''}`}
+        style={{ fontFamily: "'Times New Roman', Times, serif" }}
+      >
         {isRegenerating ? (
           <div className="flex items-center gap-2 text-muted-foreground py-4">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -376,13 +379,20 @@ export function ReportViewer({ report: initialReport, onDismissHighlight, repoUr
       )}
 
       {/* A4 Paper-like Container - Fixed Height */}
-      <div className="w-full bg-card text-card-foreground shadow-xl rounded-xl border min-h-[800px] flex flex-col relative overflow-hidden">
+      <div
+        className="w-full bg-card text-card-foreground shadow-xl rounded-xl border min-h-[800px] flex flex-col relative overflow-hidden"
+      >
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-t-xl opacity-80" />
 
         {/* Header */}
         <div className="px-8 pt-16 pb-6 space-y-3 flex-shrink-0">
           <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold tracking-tight text-foreground/90 font-serif leading-tight py-1">{report.title}</h1>
+            <h1
+              className="text-3xl font-bold tracking-tight text-foreground/90 leading-tight py-1"
+              style={{ fontFamily: "'Times New Roman', Times, serif" }}
+            >
+              {report.title}
+            </h1>
             <Badge variant={report.status === 'final' ? 'default' : 'secondary'} className="uppercase tracking-wider text-[10px]">
               {report.status}
             </Badge>
