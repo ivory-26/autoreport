@@ -1,4 +1,6 @@
 import GitHubProvider from 'next-auth/providers/github';
+import dbConnect from '@/lib/db';
+import User from '@/lib/models/User';
 
 export const authOptions = {
   providers: [
@@ -14,6 +16,22 @@ export const authOptions = {
     }),
   ],
   callbacks: {
+    async signIn({ user, account, profile }) {
+      if (account.provider === 'github') {
+        try {
+          await dbConnect();
+          // Profile contains raw GitHub data (id, login, etc) coming from OAuth
+          await User.findOrCreateFromGitHub(profile);
+          return true;
+        } catch (error) {
+          console.error('Error in signIn callback:', error);
+          // We allow sign in even if DB update fails to avoid blocking user, 
+          // but logging is critical.
+          return true;
+        }
+      }
+      return true;
+    },
     async jwt({ token, account, profile }) {
       // Persist the OAuth access_token and profile data
       if (account) {
@@ -28,6 +46,9 @@ export const authOptions = {
       session.accessToken = token.accessToken;
       session.user.githubId = token.githubId;
       session.user.githubUsername = token.githubUsername;
+      
+      // We could also fetch DB user ID here if needed, 
+      // but for now we rely on githubUsername/accessToken via JWT
       return session;
     },
   },
