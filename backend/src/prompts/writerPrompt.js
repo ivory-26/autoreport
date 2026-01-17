@@ -91,7 +91,98 @@ You MUST respond with valid JSON only. No markdown code fences.
 - "Building upon this foundation..."
 - "This capability is complemented by..."
 - "To support this feature, the implementation includes..."
-- "The architecture extends this concept through..."`;
+- "The architecture extends this concept through..."
+
+## Tables and Visual Data Presentation:
+
+### When to Use Tables:
+- **Comparing multiple items** with shared attributes (e.g., API endpoints, configuration options)
+- **Presenting technical specifications** (e.g., system requirements, dependencies)
+- **Listing features or components** with properties (e.g., modules and their responsibilities)
+- **Showing before/after data** in performance improvements
+- **Displaying configuration parameters** with descriptions and values
+
+### Markdown Table Syntax:
+Always use proper Markdown table format with alignment:
+
+\`\`\`
+| Column 1 | Column 2 | Column 3 |
+|----------|----------|----------|
+| Data 1   | Data 2   | Data 3   |
+| Data 4   | Data 5   | Data 6   |
+\`\`\`
+
+For right-aligned numbers or left-aligned text:
+\`\`\`
+| Feature       | Status    | Performance |
+|:--------------|:---------:|------------:|
+| Authentication| ✓ Active  | 25ms        |
+| Authorization | ✓ Active  | 15ms        |
+\`\`\`
+
+### Example Use Cases for Tables:
+
+1. **API Endpoints Table:**
+\`\`\`
+| Endpoint | Method | Purpose | Response |
+|----------|--------|---------|----------|
+| /api/users | GET | Retrieve users | User list |
+| /api/auth | POST | Authenticate | Auth token |
+\`\`\`
+
+2. **System Components Table:**
+\`\`\`
+| Component | Technology | Responsibility |
+|-----------|------------|----------------|
+| Frontend | React 19 | User interface |
+| Backend | Express 5 | API services |
+| Database | MongoDB | Data persistence |
+\`\`\`
+
+3. **Performance Metrics Table:**
+\`\`\`
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Load Time | 2.5s | 1.2s | 52% faster |
+| API Response | 150ms | 45ms | 70% faster |
+\`\`\`
+
+### Charts and Diagrams (Text-Based):
+
+When numerical data or architecture relationships need visualization, use:
+
+1. **ASCII Flow Diagrams** (for simple flows):
+\`\`\`
+Client → API Gateway → Service Layer → Database
+                ↓
+           Cache Layer
+\`\`\`
+
+2. **Mermaid-style Descriptions** (describe the flow textually):
+"The data flow proceeds sequentially: user request → authentication middleware → controller → service layer → database, with caching implemented at the service tier for frequently accessed resources."
+
+3. **Hierarchical Lists** (for component relationships):
+\`\`\`
+- Application Layer
+  - API Controllers
+  - Middleware Stack
+- Business Logic Layer
+  - Service Components
+  - Validation Logic
+- Data Access Layer
+  - ORM Models
+  - Database Connections
+\`\`\`
+
+### CRITICAL Table Guidelines:
+- Use tables when you have 3+ items to compare with 2+ attributes each
+- Keep tables focused - no more than 6 columns for readability
+- Use checkmarks (✓/✗) for boolean values
+- Right-align numerical data
+- Include units for measurements
+- Add a brief sentence before each table explaining what it shows
+
+Always format tables using proper Markdown syntax - the frontend now supports full Markdown rendering with styled tables.`;
 
 /**
  * Creates the user prompt for the writer agent

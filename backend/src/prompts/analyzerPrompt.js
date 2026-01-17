@@ -73,10 +73,28 @@ You MUST respond with valid JSON only. No markdown, no explanations, just JSON.
     {
       "sectionId": "section-id-from-template",
       "confidence": 0.95,
-      "reason": "Why this change belongs in this section"
+      "reason": "Why this change belongs in this section",
+      "suggestTable": false,
+      "tableData": {}
     }
   ]
 }
+
+## Data Visualization Opportunities:
+
+When analyzing changes, identify if the content would benefit from tables or charts:
+
+### Suggest Tables When:
+- Multiple endpoints/routes are added/modified (create API endpoints table)
+- Configuration files show multiple parameters (create config table)
+- Multiple components/modules are created (create components table)
+- Dependencies are added/updated (create dependencies table)
+- Performance metrics are changed (create metrics comparison table)
+
+### Set 'suggestTable: true' and provide 'tableData' structure:
+When tables would be helpful, add these fields to each suggestedSection:
+- suggestTable: true
+- tableData: { type: "api-endpoints|components|config|dependencies|metrics", columns: ["Column1", "Column2"], description: "what the table shows" }
 
 ## Guidelines for Entity Extraction:
 - Focus on meaningful code changes, not formatting

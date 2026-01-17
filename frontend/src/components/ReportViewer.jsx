@@ -2,9 +2,18 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { marked } from 'marked';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+
+// Configure marked for safe HTML rendering
+marked.setOptions({
+  breaks: true, // Convert \n to <br>
+  gfm: true, // GitHub Flavored Markdown
+  headerIds: false,
+  mangle: false
+});
 import {
   GitCommit,
   RefreshCw,
@@ -67,7 +76,7 @@ function SectionContent({ section, onDismissHighlight, onRegenerate, onRevert, o
           </div>
         ) : section.content ? (
           <div
-            dangerouslySetInnerHTML={{ __html: section.content.replace(/\n/g, '<br/>') }}
+            dangerouslySetInnerHTML={{ __html: marked.parse(section.content) }}
           />
         ) : (
           <p className="text-muted-foreground italic">
