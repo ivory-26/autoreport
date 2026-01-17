@@ -257,13 +257,10 @@ export function useProjectWizard() {
         const isComplete = await poll();
         if (isComplete) {
           clearInterval(intervalId);
-          // Notify user via browser alert
-          if (typeof window !== 'undefined') {
-            alert('Your initial report has been generated successfully!');
-          }
+          // Notify user via browser alert - REMOVED to use native Notification API in UI
           
           // Fetch final report data
-          fetchLatestReport(projectId);
+          await fetchLatestReport(projectId);
           
           setCreatedProject(prev => ({
             ...prev,

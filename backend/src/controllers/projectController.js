@@ -14,6 +14,7 @@ const { generateForAllSections } = require('../services/writerAgent');
 const { autoLogger } = require('../services/autoLogger');
 const { analyzeRepositoryForInitialReport } = require('../services/repositoryAnalyzerService');
 const { webhookQueue } = require('../services/queue');
+const { notifyUserOnGitHub } = require('../services/notificationService');
 
 // Fallback templates for when database is empty
 const fallbackTemplates = [
@@ -142,6 +143,7 @@ async function createProject(req, res) {
       repoFullName,
       templateId,
       ownerId,
+      ownerUsername,
       settings = {}
     } = req.body;
 
@@ -181,6 +183,7 @@ async function createProject(req, res) {
       repoUrl,
       repoFullName,
       owner: ownerId || null,
+      ownerUsername,
       activeTemplateId: templateId,
       webhookSecret,
       settings: {
@@ -660,6 +663,10 @@ async function processInitialReportJob(job) {
     });
 
     console.log(`[InitialReportJob] Completed: ${successCount} sections populated from repository analysis`);
+    
+    // Notify user via GitHub Issue
+    await notifyUserOnGitHub(owner, repo, accessToken, project, report._id);
+    
     return;
   }
 
@@ -876,6 +883,9 @@ async function processInitialReportJob(job) {
   });
 
   console.log(`[InitialReportJob] Completed: ${successfulUpdates.length} sections updated`);
+  
+  // Notify user via GitHub Issue
+  await notifyUserOnGitHub(owner, repo, accessToken, project, report._id);
 } catch (error) {
   console.error(`[InitialReportJob] Error in job ${job.id}:`, error.message);
   throw error;

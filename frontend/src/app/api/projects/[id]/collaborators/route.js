@@ -33,7 +33,7 @@ export async function GET(request, { params }) {
     }
 
     // Check if user is owner or collaborator
-    const username = session.user?.name;
+    const username = session.user?.githubUsername || session.user?.name;
     const isOwner = project.ownerUsername?.toLowerCase() === username?.toLowerCase();
     const isCollaborator = project.collaborators?.some(
       c => c.username?.toLowerCase() === username?.toLowerCase()
@@ -108,7 +108,7 @@ export async function DELETE(request, { params }) {
     }
 
     // Only owner can remove collaborators
-    const username = session.user?.name;
+    const username = session.user?.githubUsername || session.user?.name;
     if (project.ownerUsername?.toLowerCase() !== username?.toLowerCase()) {
       return NextResponse.json(
         { error: 'Only the project owner can remove collaborators' },

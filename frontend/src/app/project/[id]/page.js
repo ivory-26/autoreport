@@ -64,8 +64,13 @@ export default async function ProjectPage({ params }) {
   }
 
   const { report, project, logs } = data;
-  const username = session.user?.name;
-  const isOwner = project?.ownerUsername?.toLowerCase() === username?.toLowerCase();
+  
+  // Robust ownership check: Try githubUsername first, then fallback to name
+  const githubUsername = session.user?.githubUsername;
+  const displayName = session.user?.name;
+  
+  const isOwner = (githubUsername && project?.ownerUsername?.toLowerCase() === githubUsername?.toLowerCase()) ||
+                  (displayName && project?.ownerUsername?.toLowerCase() === displayName?.toLowerCase());
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 space-y-6">
