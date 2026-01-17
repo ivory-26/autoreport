@@ -9,11 +9,13 @@ const Project = require('./Project');
 const Report = require('./Report');
 const AutoLog = require('./AutoLog');
 const Invitation = require('./Invitation');
+const User = require('./User');
 
 module.exports = {
   Template,
   Project,
   Report,
   AutoLog,
-  Invitation
+  Invitation,
+  User
 };

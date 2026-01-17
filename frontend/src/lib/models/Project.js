@@ -19,7 +19,8 @@ const projectSchema = new mongoose.Schema({
   owner: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: false
+    required: true,
+    index: true
   },
   activeTemplateId: {
     type: String,

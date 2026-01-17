@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db';
-import { Project, Report, Template } from '@/lib/models';
+import { Project, Report, Template, User } from '@/lib/models';
 import crypto from 'crypto';
 
 // Fallback templates (same as in /api/templates)
@@ -122,16 +122,25 @@ export async function POST(request) {
       );
     }
 
+    // Sync user to database (find or create from session)
+    const user = await User.findOrCreateFromGitHub({
+      id: session.user.githubId,
+      login: session.user.githubUsername,
+      email: session.user.email,
+      name: session.user.name,
+      avatar_url: session.user.image
+    });
+
     // Generate webhook secret
     const webhookSecret = crypto.randomBytes(32).toString('hex');
 
-    // Create the project
+    // Create the project with proper owner reference
     const project = new Project({
       name,
       repoUrl,
       repoFullName,
-      owner: session.user?.id || null, // Note: This might need adjustment if using Users collection
-      ownerUsername: session.user?.githubUsername, // Save GitHub username
+      owner: user._id,
+      ownerUsername: session.user.githubUsername,
       activeTemplateId: templateId,
       webhookSecret,
       settings: {
