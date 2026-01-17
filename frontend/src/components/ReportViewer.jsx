@@ -66,7 +66,15 @@ function SectionContent({ section, onDismissHighlight, onRegenerate, onRevert, o
     >
       {/* Content */}
       <div
-        className={`prose prose-sm dark:prose-invert max-w-none px-4 py-3 ${hasNewContent ? 'border-l-4 border-green-500 rounded-l-none' : ''}`}
+        className={`prose prose-sm dark:prose-invert max-w-none px-4 py-3 ${hasNewContent ? 'border-l-4 border-green-500 rounded-l-none' : ''} 
+          [&_ul]:list-disc [&_ul]:ml-6 [&_ul]:my-3 [&_ul]:space-y-1.5
+          [&_ol]:list-decimal [&_ol]:ml-6 [&_ol]:my-3 [&_ol]:space-y-1.5
+          [&_li]:leading-relaxed [&_li]:text-foreground
+          [&_ul_ul]:mt-1.5 [&_ol_ol]:mt-1.5
+          [&_li>p]:my-0.5
+          [&_strong]:font-semibold [&_strong]:text-foreground
+          [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-muted [&_code]:text-sm [&_code]:font-mono
+        `}
         style={{ fontFamily: "'Times New Roman', Times, serif" }}
       >
         {isRegenerating ? (
