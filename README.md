@@ -8,39 +8,52 @@
 
 AutoReport eliminates "Documentation Debt" by integrating directly with your development workflow. When you push code to GitHub, AutoReport analyzes the changes and intelligently updates your live report based on a pre-defined or custom template.
 
-**The result?** Your project report writes itself while you code.
+**The result?** Your project report writes itself while you code, maintained by intelligent agents that understand your architecture.
 
 ## ✨ Key Features
 
+### 🤖 Autonomous Automation
 - **Zero-Click Updates**: No manual entry required. Just push code.
-- **Smart Context Analysis**: AI understands the context of your changes (e.g., Database Schema Update vs. UI Tweak) and updates the relevant section.
-- **Live Preview**: Read-write interface to view and refine the generated report.
-- **Team Collaboration**: Invite team members to view or edit reports.
-- **Audit Log**: Track every change made by the AI.
-- **Export**: Export reports to PDF or Markdown.
+- **Smart Context Analysis**: AI agents (Analyzer & Writer) understand the nature of changes (e.g., Schema vs. UI) and target specific report sections.
+- **Resilient Webhooks**: Built-in delivery tracking and automatic replay ensure no commit is ever missed, even during downtime.
+
+### 🛡️ Secure & Scalable
+- **Enterprise-Grade Security**: Implements rate limiting, strict Zod input validation, and secure header verification.
+- **Fair Job Queueing**: Intelligent generic queue system ensures fair resource allocation across multiple projects and users.
+- **Secure Deletion**: Comprehensive cleanup protocols that abort active AI jobs and remove all associated data/webhooks upon project deletion.
+
+### 📊 Rich Reporting
+- **Live Preview**: Real-time read-write interface to refine generated content.
+- **Rich Formatting**: Generates tables, charts, code blocks, and complex lists using standard Markdown.
+- **Export Options**: One-click export to PDF, DOCX, and raw Markdown.
+- **Audit Log**: Transparent changelog tracking every decision made by the AI.
+
+### 🤝 Collaboration
+- **Team Management**: Invite collaborators with specific role-based access.
+- **Returning User Flow**: Seamless authentication that remembers your repository access preferences.
 
 ## 🛠️ Tech Stack
 
 ### Frontend (UI)
 - **Framework**: Next.js 16.1.1 (App Router)
-- **Styling**: Tailwind CSS 4.0
-- **React**: React 19.2.3
+- **Styling**: Tailwind CSS 4.0 & Shadcn UI
+- **Animations**: Framer Motion
 - **Authentication**: NextAuth.js (GitHub OAuth)
 - **Deployment**: Vercel
 
 ### Backend (Worker)
 - **Runtime**: Node.js / Express 5.2.1
 - **Database**: MongoDB Atlas
-- **AI Engine**: Groq (Qwen3-32b, GPT-OSS-120b) with backups (Llama4-Scout-17b-16e)
+- **Queueing**: Custom MongoDB Job Queue
+- **AI Engine**: Groq (Qwen3-32b, GPT-OSS-120b) with failover strategies
 - **Deployment**: Render
 
 ## 📂 Project Structure
 
-Verified Monorepo structure:
 ```
 /autoreport
-├── /frontend               # Next.js Application
-├── /backend                # Express/Node.js Worker
+├── /frontend               # Next.js Application (Admin, Dashboard, Report Viewer)
+├── /backend                # Express Worker (Webhooks, Agents, Queue Processors)
 └── README.md
 ```
 
@@ -72,7 +85,7 @@ Verified Monorepo structure:
    ```bash
    cd backend
    npm install
-   # Create .env file with MONGODB_URI, etc.
+   # Create .env file with MONGODB_URI, RELAY_URL, etc.
    npm run dev
    ```
 
