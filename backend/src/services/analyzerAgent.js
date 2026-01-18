@@ -213,7 +213,7 @@ async function analyze({
       });
 
       // Record success
-      pool.recordSuccess(keyInfo.keyIndex);
+      if (pool) pool.recordSuccess(keyInfo.keyIndex);
       
       return {
         content: chatCompletion.choices[0]?.message?.content || '{}',
@@ -222,7 +222,7 @@ async function analyze({
     } catch (error) {
       // Check if it's a rate limit error
       const isRateLimit = error?.status === 429 || error?.message?.toLowerCase().includes('rate limit');
-      pool.recordFailure(keyInfo.keyIndex, isRateLimit);
+      if (pool) pool.recordFailure(keyInfo.keyIndex, isRateLimit);
       throw error;
     }
   }
@@ -241,15 +241,41 @@ async function analyze({
     );
   }
 
-  let usedModel = PRIMARY_MODEL;
+  // Helper function to call the API with retries across different keys
+  async function callWithKeyRotation(modelName, diffContent, stageLabel) {
+    const pool = getGroqKeyPool();
+    const poolSize = pool ? pool.getPoolSize() : 1;
+    let lastError;
+
+    for (let attempt = 0; attempt < poolSize; attempt++) {
+      try {
+        return await withTimeout(
+          callWithModel(modelName, diffContent),
+          timeoutMs,
+          `${stageLabel} (Key ${attempt + 1}/${poolSize})`
+        );
+      } catch (error) {
+        lastError = error;
+        // If it's a rate limit error and we have more keys to try, rotate and continue
+        if (isRateLimitError(error) && attempt < poolSize - 1) {
+          console.warn(`[Analyzer] Rate limit hit on Key ${attempt + 1}/${poolSize} for ${modelName}. Rotating key...`);
+          if (jobId && pool) {
+            pool.rotateKeyForJob(jobId);
+          }
+          // Small delay before retry
+          await new Promise(resolve => setTimeout(resolve, 200));
+          continue;
+        }
+        // For other errors or if we've exhausted all keys, throw the error
+        throw error;
+      }
+    }
+    throw lastError;
+  }
 
   try {
-    // Try with primary model first
-    const result = await withTimeout(
-      callWithModel(PRIMARY_MODEL, diff),
-      timeoutMs,
-      'Analyzer Agent'
-    );
+    // Try with primary model first (across all keys)
+    const result = await callWithKeyRotation(PRIMARY_MODEL, diff, 'Analyzer Agent');
 
     // Parse and validate the response
     const parsed = parseAIResponse(result.content);
@@ -270,17 +296,13 @@ async function analyze({
     };
 
   } catch (primaryError) {
-    // If it's a rate limit error, try fallback model
+    // If it's a rate limit error (meaning ALL keys failed for primary model), try fallback model
     if (isRateLimitError(primaryError)) {
-      console.log(`[Analyzer] Rate limit hit on ${PRIMARY_MODEL}, trying fallback model ${FALLBACK_MODEL}...`);
-      usedModel = FALLBACK_MODEL;
+      console.log(`[Analyzer] All keys rate limited on ${PRIMARY_MODEL}, trying fallback model ${FALLBACK_MODEL}...`);
 
       try {
-        const result = await withTimeout(
-          callWithModel(FALLBACK_MODEL, diff),
-          timeoutMs,
-          'Analyzer Agent (Fallback)'
-        );
+        // Try with fallback model (also across all keys if needed)
+        const result = await callWithKeyRotation(FALLBACK_MODEL, diff, 'Analyzer Agent (Fallback)');
 
         const parsed = parseAIResponse(result.content);
         const validated = validateAnalysisResult(parsed);
@@ -301,7 +323,7 @@ async function analyze({
         };
 
       } catch (fallbackError) {
-        console.error(`[Analyzer] Fallback model also failed:`, fallbackError.message);
+        console.error(`[Analyzer] Fallback model also failed across all keys:`, fallbackError.message);
         // Continue to error handling below
         throw fallbackError;
       }
@@ -397,40 +419,61 @@ async function analyzeChunked({
         templateSections
       });
 
-      const { client, keyInfo } = await getClientWithKey(jobId);
-      const pool = getGroqKeyPool();
+      // Simple wrapper to match the interface of callWithKeyRotation's expectations
+      const chunkCall = async (model) => {
+        const { client, keyInfo } = await getClientWithKey(jobId);
+        const pool = getGroqKeyPool();
+        try {
+          const completion = await client.chat.completions.create({
+            messages: [
+              {
+                role: 'system',
+                content: ANALYZER_SYSTEM_PROMPT + '\n\nThis is a CHUNKED analysis. Focus on the content provided in this chunk. Respond only with valid JSON. No markdown code fences.'
+              },
+              {
+                role: 'user',
+                content: userPrompt
+              }
+            ],
+            model: model,
+            temperature: 0.3,
+            max_tokens: 2048,
+            response_format: { type: 'json_object' }
+          });
+          if (pool) pool.recordSuccess(keyInfo.keyIndex);
+          return completion;
+        } catch (err) {
+          const isRateLimit = err?.status === 429 || err?.message?.toLowerCase().includes('rate limit');
+          if (pool) pool.recordFailure(keyInfo.keyIndex, isRateLimit);
+          throw err;
+        }
+      };
 
-      const chatCompletion = await withTimeout(
-        (async () => {
-          try {
-            const completion = await client.chat.completions.create({
-              messages: [
-                {
-                  role: 'system',
-                  content: ANALYZER_SYSTEM_PROMPT + '\n\nThis is a CHUNKED analysis. Focus on the content provided in this chunk. Respond only with valid JSON. No markdown code fences.'
-                },
-                {
-                  role: 'user',
-                  content: userPrompt
-                }
-              ],
-              model: PRIMARY_MODEL,
-              temperature: 0.3,
-              max_tokens: 2048,
-              response_format: { type: 'json_object' }
-            });
-            
-            pool.recordSuccess(keyInfo.keyIndex);
-            return completion;
-          } catch (error) {
-            const isRateLimit = error?.status === 429 || error?.message?.toLowerCase().includes('rate limit');
-            pool.recordFailure(keyInfo.keyIndex, isRateLimit);
-            throw error;
+      // Try all keys for primary model
+      let chatCompletion;
+      const pool = getGroqKeyPool();
+      const poolSize = pool ? pool.getPoolSize() : 1;
+      let lastError;
+
+      for (let attempt = 0; attempt < poolSize; attempt++) {
+        try {
+          chatCompletion = await withTimeout(
+            chunkCall(PRIMARY_MODEL),
+            timeoutMs,
+            `Analyzer Agent (Chunk ${i + 1}, Key ${attempt + 1}/${poolSize})`
+          );
+          break;
+        } catch (error) {
+          lastError = error;
+          if (isRateLimitError(error) && attempt < poolSize - 1) {
+            console.warn(`[Analyzer] Rate limit hit on Chunk ${i+1}, Key ${attempt+1}/${poolSize}. Rotating key...`);
+            if (jobId && pool) pool.rotateKeyForJob(jobId);
+            await new Promise(resolve => setTimeout(resolve, 200));
+            continue;
           }
-        })(),
-        timeoutMs,
-        `Analyzer Agent (Chunk ${i + 1})`
-      );
+          throw error;
+        }
+      }
 
       const content = chatCompletion.choices[0]?.message?.content || '{}';
       const parsed = parseAIResponse(content);

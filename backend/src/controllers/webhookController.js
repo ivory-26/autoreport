@@ -324,6 +324,13 @@ async function processWebhookJob(job) {
       message: 'Saving updates to database'
     });
 
+    // Refetch the report right before saving to minimize VersionError (concurrency issues)
+    // AI generation can take minutes, and the report may have changed during that time.
+    let refreshedReport = await Report.findById(report._id);
+    if (!refreshedReport) {
+      refreshedReport = report; // Fallback if somehow deleted
+    }
+
     // Update the report with generated content
     const successfulUpdates = [];
     const failedUpdates = [];
@@ -331,7 +338,7 @@ async function processWebhookJob(job) {
     for (const result of writerResults) {
       if (result.success && result.content) {
         // Find or create section in report
-        let section = report.sections.find(s => s.templateSectionId === result.sectionId);
+        let section = refreshedReport.sections.find(s => s.templateSectionId === result.sectionId);
         
         if (!section) {
           // Add new section
@@ -348,7 +355,7 @@ async function processWebhookJob(job) {
             contributions: [],
             previousVersions: []
           };
-          report.sections.push(section);
+          refreshedReport.sections.push(section);
         }
 
         // Save current content as previous version before updating (for revert functionality)
@@ -392,10 +399,57 @@ async function processWebhookJob(job) {
       }
     }
 
-    // Save the report
-    report.metadata.lastAIUpdate = new Date();
-    report.updateWordCount();
-    await report.save();
+    // Save the report with retry logic for VersionError
+    let saveAttempts = 0;
+    const maxSaveAttempts = 3;
+    let saved = false;
+
+    while (saveAttempts < maxSaveAttempts && !saved) {
+      try {
+        refreshedReport.metadata.lastAIUpdate = new Date();
+        refreshedReport.updateWordCount();
+        await refreshedReport.save();
+        saved = true;
+      } catch (saveError) {
+        saveAttempts++;
+        if (saveError.name === 'VersionError' && saveAttempts < maxSaveAttempts) {
+          console.warn(`[Webhook] VersionError on save attempt ${saveAttempts} for report ${refreshedReport._id}. Refetching and retrying...`);
+          // Fetch the latest version from DB
+          const latestReport = await Report.findById(refreshedReport._id);
+          if (!latestReport) throw saveError;
+
+          // Merge the AI changes into the latest version
+          for (const result of successfulUpdates) {
+             let latestSection = latestReport.sections.find(s => s.templateSectionId === result.sectionId);
+             if (latestSection) {
+                // If section was updated since we last looked, we append to the NEW content
+                // This is safe because we are just appending
+                if (result.insertPosition === 'prepend') {
+                  latestSection.content = result.content + '\n\n' + latestSection.content;
+                } else {
+                  latestSection.content = latestSection.content + '\n\n' + result.content;
+                }
+                latestSection.lastUpdated = new Date();
+                latestSection.aiLastTouched = true;
+                latestSection.wordCount = latestSection.content.split(/\s+/).filter(Boolean).length;
+                latestSection.contributions.push({
+                  commitHash: commit.hash,
+                  addedAt: new Date(),
+                  contentPreview: result.content.substring(0, 100)
+                });
+             } else {
+                // Should not happen as sections are template-driven, but handle anyway
+                latestReport.sections.push(refreshedReport.sections.find(s => s.templateSectionId === result.sectionId));
+             }
+          }
+          refreshedReport = latestReport;
+          // Exponential backoff before retry
+          await new Promise(resolve => setTimeout(resolve, 500 * saveAttempts));
+        } else {
+          throw saveError;
+        }
+      }
+    }
 
     pipelineTrace.savedAt = new Date();
 
@@ -407,7 +461,7 @@ async function processWebhookJob(job) {
         // Partial success
         await autoLogger.logPartial({
           projectId,
-          reportId: report._id,
+          reportId: refreshedReport._id,
           commitHash: commit.hash,
           commitMessage: commit.message,
           author: commit.author,
@@ -421,7 +475,7 @@ async function processWebhookJob(job) {
         // Full success
         await autoLogger.logSuccess({
           projectId,
-          reportId: report._id,
+          reportId: refreshedReport._id,
           commitHash: commit.hash,
           commitMessage: commit.message,
           author: commit.author,

@@ -67,12 +67,54 @@ function parseWriterResponse(text) {
   cleaned = cleaned.trim();
 
   try {
-    return JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+    
+    // Handle nested 'content' objects (some models do this despite instructions)
+    if (parsed.content && typeof parsed.content === 'object') {
+      console.warn('[Writer] AI returned nested content object, flattening...');
+      
+      // If it's something like { "Database Design": { "intro": "..." } }
+      function flattenObject(obj, depth = 0) {
+        let text = '';
+        for (const [key, value] of Object.entries(obj)) {
+          if (typeof value === 'object' && value !== null) {
+            text += `${'#'.repeat(depth + 1)} ${key}\n\n${flattenObject(value, depth + 1)}\n\n`;
+          } else {
+            text += `${'#'.repeat(depth + 1)} ${key}\n\n${value}\n\n`;
+          }
+        }
+        return text.trim();
+      }
+      
+      parsed.content = flattenObject(parsed.content);
+    }
+    
+    return parsed;
   } catch (error) {
     // Try to extract JSON from the response
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      try {
+        const extracted = JSON.parse(jsonMatch[0]);
+        // Apply same flattening logic to extracted JSON
+        if (extracted.content && typeof extracted.content === 'object') {
+          console.warn('[Writer] AI returned nested content object in extracted JSON, flattening...');
+          
+          function flattenObject(obj, depth = 0) {
+            let text = '';
+            for (const [key, value] of Object.entries(obj)) {
+              if (typeof value === 'object' && value !== null) {
+                text += `${'#'.repeat(depth + 1)} ${key}\n${flattenObject(value, depth + 1)}\n\n`;
+              } else {
+                text += `${'#'.repeat(depth + 1)} ${key}\n${value}\n\n`;
+              }
+            }
+            return text.trim();
+          }
+          extracted.content = flattenObject(extracted.content);
+        }
+        return extracted;
+      } catch (e) { /* ignore and fallback */ }
     }
     
     // If no JSON found, treat the whole response as content
@@ -183,7 +225,7 @@ async function generate({
         response_format: { type: 'json_object' }
       });
 
-      pool.recordSuccess(keyInfo.keyIndex);
+      if (pool) pool.recordSuccess(keyInfo.keyIndex);
       
       return {
         content: chatCompletion.choices[0]?.message?.content || '{}',
@@ -191,7 +233,7 @@ async function generate({
       };
     } catch (error) {
       const isRateLimit = error?.status === 429 || error?.message?.toLowerCase().includes('rate limit');
-      pool.recordFailure(keyInfo.keyIndex, isRateLimit);
+      if (pool) pool.recordFailure(keyInfo.keyIndex, isRateLimit);
       throw error;
     }
   }
@@ -210,13 +252,41 @@ async function generate({
     );
   }
 
+  // Helper function to call the API with retries across different keys
+  async function callWithKeyRotation(modelName, stageLabel) {
+    const pool = getGroqKeyPool();
+    const poolSize = pool ? pool.getPoolSize() : 1;
+    let lastError;
+
+    for (let attempt = 0; attempt < poolSize; attempt++) {
+      try {
+        return await withTimeout(
+          callWithModel(modelName),
+          timeoutMs,
+          `${stageLabel} (Key ${attempt + 1}/${poolSize})`
+        );
+      } catch (error) {
+        lastError = error;
+        // If it's a rate limit error and we have more keys to try, rotate and continue
+        if (isRateLimitError(error) && attempt < poolSize - 1) {
+          console.warn(`[Writer] Rate limit hit on Key ${attempt + 1}/${poolSize} for ${modelName}. Rotating key...`);
+          if (jobId && pool) {
+            pool.rotateKeyForJob(jobId);
+          }
+          // Small delay before retry
+          await new Promise(resolve => setTimeout(resolve, 200));
+          continue;
+        }
+        // For other errors or if we've exhausted all keys, throw the error
+        throw error;
+      }
+    }
+    throw lastError;
+  }
+
   try {
-    // Try with primary model first
-    const result = await withTimeout(
-      callWithModel(PRIMARY_MODEL),
-      timeoutMs,
-      'Writer Agent'
-    );
+    // Try with primary model first (across all keys)
+    const result = await callWithKeyRotation(PRIMARY_MODEL, 'Writer Agent');
 
     // Parse and validate the response
     const parsed = parseWriterResponse(result.content);
@@ -237,16 +307,13 @@ async function generate({
     };
 
   } catch (primaryError) {
-    // If it's a rate limit error, try fallback model
+    // If it's a rate limit error (meaning ALL keys failed for primary), try fallback model
     if (isRateLimitError(primaryError)) {
-      console.log(`[Writer] Rate limit hit on ${PRIMARY_MODEL}, trying fallback model ${FALLBACK_MODEL}...`);
+      console.log(`[Writer] All keys rate limited on ${PRIMARY_MODEL}, trying fallback model ${FALLBACK_MODEL}...`);
 
       try {
-        const result = await withTimeout(
-          callWithModel(FALLBACK_MODEL),
-          timeoutMs,
-          'Writer Agent (Fallback)'
-        );
+        // Try with fallback model (across all keys)
+        const result = await callWithKeyRotation(FALLBACK_MODEL, 'Writer Agent (Fallback)');
 
         const parsed = parseWriterResponse(result.content);
         const validated = validateWriterResult(parsed, targetSection);
@@ -267,7 +334,7 @@ async function generate({
         };
 
       } catch (fallbackError) {
-        console.error(`[Writer] Fallback model also failed:`, fallbackError.message);
+        console.error(`[Writer] Fallback model also failed across all keys:`, fallbackError.message);
         // Continue to error handling below
         throw fallbackError;
       }
@@ -339,11 +406,11 @@ async function generateSectionIntro(section, projectMetadata, jobId = null) {
         max_tokens: 500
       });
 
-      pool.recordSuccess(keyInfo.keyIndex);
+      if (pool) pool.recordSuccess(keyInfo.keyIndex);
       return chatCompletion.choices[0]?.message?.content || '';
     } catch (error) {
       const isRateLimit = error?.status === 429 || error?.message?.toLowerCase().includes('rate limit');
-      pool.recordFailure(keyInfo.keyIndex, isRateLimit);
+      if (pool) pool.recordFailure(keyInfo.keyIndex, isRateLimit);
       throw error;
     }
   }
@@ -362,12 +429,38 @@ async function generateSectionIntro(section, projectMetadata, jobId = null) {
     );
   }
 
+  // Helper function to call the API with retries across different keys
+  async function callWithKeyRotation(modelName, stageLabel) {
+    const pool = getGroqKeyPool();
+    const poolSize = pool ? pool.getPoolSize() : 1;
+    let lastError;
+
+    for (let attempt = 0; attempt < poolSize; attempt++) {
+      try {
+        return await withTimeout(
+          callWithModel(modelName),
+          timeoutMs,
+          `${stageLabel} (Key ${attempt + 1}/${poolSize})`
+        );
+      } catch (error) {
+        lastError = error;
+        // If it's a rate limit error and we have more keys to try, rotate and continue
+        if (isRateLimitError(error) && attempt < poolSize - 1) {
+          console.warn(`[Writer] Rate limit hit on Key ${attempt + 1}/${poolSize} for intro. Rotating key...`);
+          if (jobId && pool) {
+            pool.rotateKeyForJob(jobId);
+          }
+          await new Promise(resolve => setTimeout(resolve, 200));
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw lastError;
+  }
+
   try {
-    const result = await withTimeout(
-      callWithModel(PRIMARY_MODEL),
-      timeoutMs,
-      'Section Intro Generator'
-    );
+    const result = await callWithKeyRotation(PRIMARY_MODEL, 'Section Intro Generator');
 
     // Clean up the response (remove any JSON wrapping)
     let intro = result.trim();
@@ -383,14 +476,10 @@ async function generateSectionIntro(section, projectMetadata, jobId = null) {
   } catch (primaryError) {
     // If it's a rate limit error, try fallback model
     if (isRateLimitError(primaryError)) {
-      console.log(`[Writer] Rate limit hit on ${PRIMARY_MODEL} for intro, trying fallback model ${FALLBACK_MODEL}...`);
+      console.log(`[Writer] All keys rate limited on ${PRIMARY_MODEL} for intro, trying fallback model ${FALLBACK_MODEL}...`);
 
       try {
-        const result = await withTimeout(
-          callWithModel(FALLBACK_MODEL),
-          timeoutMs,
-          'Section Intro Generator (Fallback)'
-        );
+        const result = await callWithKeyRotation(FALLBACK_MODEL, 'Section Intro Generator (Fallback)');
 
         let intro = result.trim();
         if (intro.startsWith('```')) {
@@ -401,7 +490,7 @@ async function generateSectionIntro(section, projectMetadata, jobId = null) {
         return intro;
 
       } catch (fallbackError) {
-        console.error(`[Writer] Fallback model also failed for intro:`, fallbackError.message);
+        console.error(`[Writer] Fallback model also failed for intro across all keys:`, fallbackError.message);
         return '';
       }
     }

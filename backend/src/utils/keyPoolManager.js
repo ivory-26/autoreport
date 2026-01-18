@@ -138,6 +138,17 @@ class KeyPoolManager {
   releaseJobKey(jobId) {
     this.jobKeyAssignments.delete(jobId);
   }
+
+  /**
+   * Explicitly rotate the key assigned to a job (call when a key hits rate limit)
+   * @param {string} jobId - Job identifier
+   * @returns {Object} - New key info
+   */
+  rotateKeyForJob(jobId) {
+    // Force removal of current assignment so assignKeyForJob picks a new one
+    this.jobKeyAssignments.delete(jobId);
+    return this.assignKeyForJob(jobId);
+  }
   
   /**
    * Get an API key using random selection from healthy keys
