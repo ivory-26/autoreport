@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
-import { signIn, useSession } from 'next-auth/react';
+import { signIn, useSession, getProviders } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,9 +24,27 @@ function SignUpContent() {
   const { data: session, status } = useSession();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [providers, setProviders] = useState(null);
+  const [loadingProviders, setLoadingProviders] = useState(true);
 
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
   const errorParam = searchParams.get('error');
+
+  // Fetch available providers on mount
+  useEffect(() => {
+    const fetchProviders = async () => {
+      try {
+        const res = await getProviders();
+        setProviders(res);
+      } catch (err) {
+        console.error('Error fetching providers:', err);
+        setError('Failed to load authentication options. Please refresh the page.');
+      } finally {
+        setLoadingProviders(false);
+      }
+    };
+    fetchProviders();
+  }, []);
 
   // If already authenticated, redirect to callback URL
   useEffect(() => {
@@ -76,8 +94,8 @@ function SignUpContent() {
     }
   };
 
-  // Show loading spinner while checking session
-  if (status === 'loading') {
+  // Show loading spinner while checking session or loading providers
+  if (status === 'loading' || loadingProviders) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -184,45 +202,61 @@ function SignUpContent() {
                 </Alert>
               )}
 
-              <div className="space-y-3">
-                <Button
-                  onClick={() => handleSignUp('github')}
-                  disabled={isLoading}
-                  className="w-full h-auto py-4 px-4 text-base font-semibold shadow-lg hover:shadow-xl transition-all"
-                  variant="default"
-                >
-                  {isLoading ? (
-                    <Loader2 className="h-5 w-5 mr-3 animate-spin" />
-                  ) : (
-                    <Github className="h-5 w-5 mr-3" />
+              {/* Check if any providers are available */}
+              {(!providers || Object.keys(providers).length === 0) ? (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Authentication is currently unavailable. Please try again later.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <div className="space-y-3">
+                  {/* Full access GitHub provider */}
+                  {providers.github && (
+                    <Button
+                      onClick={() => handleSignUp('github')}
+                      disabled={isLoading}
+                      className="w-full h-auto py-4 px-4 text-base font-semibold shadow-lg hover:shadow-xl transition-all"
+                      variant="default"
+                    >
+                      {isLoading ? (
+                        <Loader2 className="h-5 w-5 mr-3 animate-spin" />
+                      ) : (
+                        <Github className="h-5 w-5 mr-3" />
+                      )}
+                      <div className="flex flex-col items-start text-left flex-1">
+                        <span className="font-semibold">Sign up with GitHub</span>
+                        <span className="text-xs opacity-90 font-normal">
+                          Full access to public and private repos
+                        </span>
+                      </div>
+                    </Button>
                   )}
-                  <div className="flex flex-col items-start text-left flex-1">
-                    <span className="font-semibold">Sign up with GitHub</span>
-                    <span className="text-xs opacity-90 font-normal">
-                      Full access to public and private repos
-                    </span>
-                  </div>
-                </Button>
 
-                <Button
-                  onClick={() => handleSignUp('github-public')}
-                  disabled={isLoading}
-                  className="w-full h-auto py-4 px-4 text-base"
-                  variant="outline"
-                >
-                  {isLoading ? (
-                    <Loader2 className="h-5 w-5 mr-3 animate-spin" />
-                  ) : (
-                    <Github className="h-5 w-5 mr-3" />
+                  {/* Public-only GitHub provider - only show if configured */}
+                  {providers['github-public'] && (
+                    <Button
+                      onClick={() => handleSignUp('github-public')}
+                      disabled={isLoading}
+                      className="w-full h-auto py-4 px-4 text-base"
+                      variant="outline"
+                    >
+                      {isLoading ? (
+                        <Loader2 className="h-5 w-5 mr-3 animate-spin" />
+                      ) : (
+                        <Github className="h-5 w-5 mr-3" />
+                      )}
+                      <div className="flex flex-col items-start text-left flex-1">
+                        <span className="font-semibold">Public Repos Only</span>
+                        <span className="text-xs text-muted-foreground font-normal">
+                          Access only public repositories
+                        </span>
+                      </div>
+                    </Button>
                   )}
-                  <div className="flex flex-col items-start text-left flex-1">
-                    <span className="font-semibold">Public Repos Only</span>
-                    <span className="text-xs text-muted-foreground font-normal">
-                      Access only public repositories
-                    </span>
-                  </div>
-                </Button>
-              </div>
+                </div>
+              )}
 
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
