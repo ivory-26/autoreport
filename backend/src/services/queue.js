@@ -95,7 +95,7 @@ class WebhookQueue extends EventEmitter {
       status: JOB_STATUS.PENDING,
       queuedAt: new Date(),
       attempts: 0,
-      errors: [],
+      errorLog: [],
       pipelineTrace: {
         webhookReceived: jobData.receivedAt || new Date(),
         queuedAt: new Date()
@@ -316,7 +316,7 @@ class WebhookQueue extends EventEmitter {
             // Job is dead
             await Job.findByIdAndUpdate(jobId, {
               $set: { status: JOB_STATUS.DEAD },
-              $push: { errors: errorEntry }
+              $push: { errorLog: errorEntry }
             });
 
             this.stats.totalFailed++;
@@ -348,7 +348,7 @@ class WebhookQueue extends EventEmitter {
                 status: JOB_STATUS.PENDING,
                 retryAfter
               },
-              $push: { errors: errorEntry }
+              $push: { errorLog: errorEntry }
             });
 
             console.log(`[Queue] Job ${jobId.substring(0, 8)} will retry after ${retryAfter.toISOString()} (attempt ${job.attempts + 1}/${this.maxAttempts})`);

@@ -44,7 +44,7 @@ const jobSchema = new mongoose.Schema({
   },
   
   // Array of errors from failed attempts
-  errors: [{
+  errorLog: [{
     attempt: Number,
     error: String,
     timestamp: Date

@@ -115,7 +115,7 @@ async function getJobStatus(req, res) {
       completedAt: job.completedAt,
       attempts: job.attempts,
       progress: job.progress || [],
-      errors: job.errors || [],
+      errors: job.errorLog || [],
       // Include result info for completed jobs
       result: job.status === JOB_STATUS.COMPLETED ? {
         processingTime: job.completedAt ? job.completedAt - job.startedAt : null
