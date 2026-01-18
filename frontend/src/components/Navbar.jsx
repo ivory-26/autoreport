@@ -29,7 +29,7 @@ export function Navbar() {
         <div className="flex items-center justify-start flex-1">
           {session && (
             <nav className="flex items-center space-x-4">
-              <Link href="/dashboard" className={`relative text-sm font-medium transition-colors hover:text-primary ${isActive('/dashboard') ? 'text-foreground' : 'text-muted-foreground'}`}>
+              <Link href="/dashboard" prefetch={true} className={`relative text-sm font-medium transition-colors hover:text-primary ${isActive('/dashboard') ? 'text-foreground' : 'text-muted-foreground'}`}>
                 Dashboard
                 {isActive('/dashboard') && (
                   <motion.div
@@ -83,7 +83,7 @@ export function Navbar() {
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href="/dashboard" className="cursor-pointer">
+                  <Link href="/dashboard" prefetch={true} className="cursor-pointer">
                     <LayoutDashboard className="mr-2 h-4 w-4" />
                     Dashboard
                   </Link>

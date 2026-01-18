@@ -120,7 +120,7 @@ export default function LandingPage({ session }) {
 
                     <motion.div variants={item} className="flex flex-wrap items-center justify-center gap-6 pt-8">
                         {session ? (
-                            <Link href="/dashboard">
+                            <Link href="/dashboard" prefetch={true}>
                                 <LandingButton variant="primary" className="text-lg h-14 px-10">
                                     Go to Dashboard <ArrowRight className="ml-2 h-5 w-5" />
                                 </LandingButton>

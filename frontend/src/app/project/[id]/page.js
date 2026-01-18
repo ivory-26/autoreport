@@ -22,35 +22,29 @@ export const revalidate = 0;
 async function getReportData(id) {
   await dbConnect();
 
-  const report = await Report.findById(id).lean();
+  const reportData = await Report.findById(id).lean();
   
-  if (!report) {
+  if (!reportData) {
     return null;
   }
 
-  const project = await Project.findById(report.projectId).lean();
+  const projectData = await Project.findById(reportData.projectId).lean();
 
-  const logs = await AutoLog.find({ projectId: report.projectId })
+  const logsData = await AutoLog.find({ projectId: reportData.projectId })
     .sort({ createdAt: -1 })
     .limit(20)
     .lean();
 
+  // Helper to serialize objects
+  const serialize = (obj) => {
+    if (!obj) return null;
+    return JSON.parse(JSON.stringify(obj));
+  };
+
   return {
-    report: {
-      ...report,
-      _id: report._id.toString(),
-      projectId: report.projectId.toString(),
-    },
-    project: project ? {
-      ...project,
-      _id: project._id.toString(),
-    } : null,
-    logs: logs.map(log => ({
-      ...log,
-      _id: log._id.toString(),
-      projectId: log.projectId.toString(),
-      reportId: log.reportId?.toString(),
-    })),
+    report: serialize(reportData),
+    project: serialize(projectData),
+    logs: serialize(logsData),
   };
 }
 
