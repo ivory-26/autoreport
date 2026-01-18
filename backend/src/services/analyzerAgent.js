@@ -11,45 +11,27 @@ const Groq = require('groq-sdk');
 const { withTimeout, getTimeoutFromEnv, TimeoutError } = require('./timeout');
 const { ANALYZER_SYSTEM_PROMPT, createAnalyzerUserPrompt, createChunkedAnalyzerPrompt } = require('../prompts/analyzerPrompt');
 const { chunkDiff, mergeChunkAnalyses, DEFAULT_CHUNK_SIZE } = require('./chunkingService');
-const KeyPoolManager = require('../utils/keyPoolManager');
+const { MODELS, getGroqKeyPool } = require('../utils/aiConfig');
 
-// Model configuration - primary and fallback models
-const PRIMARY_MODEL = 'openai/gpt-oss-120b';
-const FALLBACK_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+// Model configuration - primary and fallback models from shared config
+const PRIMARY_MODEL = MODELS.ANALYZER.PRIMARY;
+const FALLBACK_MODEL = MODELS.ANALYZER.FALLBACK;
 
 // Maximum tokens to use for diff (leaving room for prompt and response)
 const MAX_DIFF_TOKENS = 4000; // ~16000 chars assuming 4 chars per token
 const CHUNKING_THRESHOLD = DEFAULT_CHUNK_SIZE; // Use chunking for diffs larger than this
 
-// Initialize API key pool manager
-let keyPool = null;
-
 /**
- * Initialize the key pool
- * Supports both GROQ_API_KEY (single) and GROQ_API_KEYS (multiple, comma-separated)
- * @throws {Error} If no API keys are set
+ * Get a Groq client with the next available API key from the shared pool
+ * @returns {Promise<Object>} - { client: Groq, keyInfo: { keyIndex, masked, poolSize } }
  */
-function initializeKeyPool() {
-  if (keyPool) return keyPool;
-  
-  // Check for multiple keys first, fall back to single key
-  const keysString = process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY;
-  
-  if (!keysString) {
-    throw new Error('GROQ_API_KEY or GROQ_API_KEYS environment variable is not set. Get a free key at https://console.groq.com');
+async function getClientWithKey() {
+  const pool = getGroqKeyPool();
+  if (!pool) {
+    throw new Error('GROQ_API_KEYS environment variable is not set.');
   }
   
-  keyPool = new KeyPoolManager(keysString, 'Analyzer');
-  return keyPool;
-}
-
-/**
- * Get a Groq client with the next available API key
- * @returns {Object} - { client: Groq, keyInfo: { keyIndex, masked, poolSize } }
- */
-function getClientWithKey() {
-  const pool = initializeKeyPool();
-  const keyInfo = pool.getNextKey();
+  const keyInfo = await pool.getNextKey();
   
   const client = new Groq({
     apiKey: keyInfo.key
@@ -186,8 +168,8 @@ async function analyze({
 
   // Helper function to call the API with a specific model
   async function callWithModel(modelName, diffContent) {
-    const { client, keyInfo } = getClientWithKey();
-    const pool = initializeKeyPool();
+    const { client, keyInfo } = await getClientWithKey();
+    const pool = getGroqKeyPool();
 
     try {
       const userPrompt = createAnalyzerUserPrompt({
@@ -401,8 +383,8 @@ async function analyzeChunked({
         templateSections
       });
 
-      const { client, keyInfo } = getClientWithKey();
-      const pool = initializeKeyPool();
+      const { client, keyInfo } = await getClientWithKey();
+      const pool = getGroqKeyPool();
 
       const chatCompletion = await withTimeout(
         (async () => {

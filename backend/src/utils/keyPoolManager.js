@@ -47,26 +47,38 @@ class KeyPoolManager {
   }
   
   /**
-   * Get the next available API key (round-robin)
-   * @returns {Object} - { key: string, keyIndex: number, masked: string }
+   * Get an API key using random selection from healthy keys
+   * @returns {Promise<Object>} - { key: string, keyIndex: number, masked: string }
    */
-  getNextKey() {
-    // Simple round-robin
-    const keyIndex = this.currentIndex;
-    const key = this.keys[keyIndex];
+  async getNextKey() {
+    const now = Date.now();
     
-    // Move to next key for next request
-    this.currentIndex = (this.currentIndex + 1) % this.keys.length;
-    
-    // Update stats
-    const stats = this.keyStats.get(keyIndex);
+    // Filter for healthy keys
+    const healthyIndices = [];
+    this.keyStats.forEach((stats, index) => {
+      if (stats.isHealthy) {
+        healthyIndices.push(index);
+      } else {
+        const lastUsed = stats.lastUsed ? stats.lastUsed.getTime() : 0;
+        if (now - lastUsed > 60000) {
+          stats.isHealthy = true;
+          healthyIndices.push(index);
+        }
+      }
+    });
+
+    const choices = healthyIndices.length > 0 ? healthyIndices : Array.from(this.keyStats.keys());
+    const randomIndex = Math.floor(Math.random() * choices.length);
+    const selectedIndex = choices[randomIndex];
+
+    const stats = this.keyStats.get(selectedIndex);
     stats.totalRequests++;
     stats.lastUsed = new Date();
     
     return {
-      key,
-      keyIndex,
-      masked: this.maskKey(key),
+      key: this.keys[selectedIndex],
+      keyIndex: selectedIndex,
+      masked: this.maskKey(this.keys[selectedIndex]),
       poolSize: this.keys.length
     };
   }
@@ -94,7 +106,8 @@ class KeyPoolManager {
       stats.failedRequests++;
       if (isRateLimit) {
         stats.rateLimitHits++;
-        console.warn(`[${this.serviceName}] Rate limit hit for key ${stats.key}`);
+        stats.isHealthy = false; // Mark temporarily unhealthy
+        console.warn(`[${this.serviceName}] Rate limit hit for key ${stats.key}. Marking as unhealthy for 60s.`);
       }
     }
   }

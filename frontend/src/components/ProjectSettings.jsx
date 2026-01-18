@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,18 +11,54 @@ import {
   AlertCircle,
   ExternalLink,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  RefreshCw
 } from 'lucide-react';
 
-export function ProjectSettings({ project }) {
+export function ProjectSettings({ project: initialProject }) {
+  const [project, setProject] = useState(initialProject);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedSecret, setCopiedSecret] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Sync with initialProject prop if it changes
+  useEffect(() => {
+    setProject(initialProject);
+  }, [initialProject]);
 
   // Remove trailing slash and add webhooks path
   const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || 'https://your-backend.onrender.com').replace(/\/$/, '');
   const webhookUrl = `${backendUrl}/webhooks/github`;
 
+  const handleSyncStatus = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const response = await fetch(`/api/projects/${project._id}/webhook-sync`);
+      const data = await response.json();
+      if (data.success) {
+        setProject(prev => ({
+          ...prev,
+          webhookEnabled: data.webhookEnabled,
+          webhookId: data.webhookId
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to sync webhook status:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Auto-sync on mount if marked as disabled (owner view)
+  useEffect(() => {
+    if (!project.webhookEnabled) {
+      handleSyncStatus();
+    }
+  }, []);
+
   const copyToClipboard = (text, setCopied) => {
+    if (!text) return;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -42,22 +78,34 @@ export function ProjectSettings({ project }) {
                 Configure how AutoReport receives updates from your repository
               </CardDescription>
             </div>
-            <Badge
-              variant={project.webhookEnabled ? "default" : "outline"}
-              className={`${project.webhookEnabled ? "bg-green-500 hover:bg-green-600" : "text-amber-600 border-amber-200 bg-amber-50"}`}
-            >
-              {project.webhookEnabled ? (
-                <span className="flex items-center gap-1">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  Enabled
-                </span>
-              ) : (
-                <span className="flex items-center gap-1">
-                  <ShieldAlert className="h-3.5 w-3.5" />
-                  Manual Setup Required
-                </span>
-              )}
-            </Badge>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSyncStatus}
+                disabled={isSyncing}
+                className="h-8 w-8 p-0 rounded-full"
+                title="Sync status with GitHub"
+              >
+                <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin text-primary' : 'text-muted-foreground'}`} />
+              </Button>
+              <Badge
+                variant={project.webhookEnabled ? "default" : "outline"}
+                className={`${project.webhookEnabled ? "bg-green-500 hover:bg-green-600" : "text-amber-600 border-amber-200 bg-amber-50"}`}
+              >
+                {project.webhookEnabled ? (
+                  <span className="flex items-center gap-1">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Enabled
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1">
+                    <ShieldAlert className="h-3.5 w-3.5" />
+                    Manual Setup Required
+                  </span>
+                )}
+              </Badge>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">

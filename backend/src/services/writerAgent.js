@@ -10,41 +10,23 @@
 const Groq = require('groq-sdk');
 const { withTimeout, getTimeoutFromEnv, TimeoutError } = require('./timeout');
 const { WRITER_SYSTEM_PROMPT, createWriterUserPrompt, createSectionIntroPrompt } = require('../prompts/writerPrompt');
-const KeyPoolManager = require('../utils/keyPoolManager');
+const { MODELS, getGroqKeyPool } = require('../utils/aiConfig');
 
-// Model configuration - primary and fallback models
-const PRIMARY_MODEL = 'qwen/qwen3-32b'; // Qwen3-32B for creative technical writing
-const FALLBACK_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
-
-// Initialize API key pool manager
-let keyPool = null;
+// Model configuration - primary and fallback models from shared config
+const PRIMARY_MODEL = MODELS.WRITER.PRIMARY;
+const FALLBACK_MODEL = MODELS.WRITER.FALLBACK;
 
 /**
- * Initialize the key pool
- * Supports both GROQ_API_KEY (single) and GROQ_API_KEYS (multiple, comma-separated)
- * @throws {Error} If no API keys are set
+ * Get a Groq client with the next available API key from the shared pool
+ * @returns {Promise<Object>} - { client: Groq, keyInfo: { keyIndex, masked, poolSize } }
  */
-function initializeKeyPool() {
-  if (keyPool) return keyPool;
-  
-  // Check for multiple keys first, fall back to single key
-  const keysString = process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY;
-  
-  if (!keysString) {
-    throw new Error('GROQ_API_KEY or GROQ_API_KEYS environment variable is not set. Get a free key at https://console.groq.com');
+async function getClientWithKey() {
+  const pool = getGroqKeyPool();
+  if (!pool) {
+    throw new Error('GROQ_API_KEYS environment variable is not set.');
   }
   
-  keyPool = new KeyPoolManager(keysString, 'Writer');
-  return keyPool;
-}
-
-/**
- * Get a Groq client with the next available API key
- * @returns {Object} - { client: Groq, keyInfo: { keyIndex, masked, poolSize } }
- */
-function getClientWithKey() {
-  const pool = initializeKeyPool();
-  const keyInfo = pool.getNextKey();
+  const keyInfo = await pool.getNextKey();
   
   const client = new Groq({
     apiKey: keyInfo.key
@@ -158,8 +140,8 @@ async function generate({
 
   // Helper function to call the API with a specific model
   async function callWithModel(modelName) {
-    const { client, keyInfo } = getClientWithKey();
-    const pool = initializeKeyPool();
+    const { client, keyInfo } = await getClientWithKey();
+    const pool = getGroqKeyPool();
 
     try {
       const userPrompt = createWriterUserPrompt({
@@ -323,8 +305,8 @@ async function generateSectionIntro(section, projectMetadata) {
 
   // Helper function to call the API with a specific model
   async function callWithModel(modelName) {
-    const { client, keyInfo } = getClientWithKey();
-    const pool = initializeKeyPool();
+    const { client, keyInfo } = await getClientWithKey();
+    const pool = getGroqKeyPool();
     const prompt = createSectionIntroPrompt(section, projectMetadata);
 
     try {
