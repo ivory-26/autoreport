@@ -247,7 +247,8 @@ async function generateInitialReportContent({
   repoContext,
   templateSections,
   projectMetadata,
-  onProgress
+  onProgress,
+  jobId // Optional job ID for key assignment
 }) {
   console.log(`[RepoAnalyzer] Generating initial content for ${templateSections.length} sections`);
   
@@ -322,7 +323,8 @@ async function generateInitialReportContent({
           author: 'System'
         },
         repoContext, // Pass full context for initial generation
-        allSections: templateSections // Pass template structure for context
+        allSections: templateSections, // Pass template structure for context
+        jobId // Pass job ID for consistent key usage
       });
 
       results.push({
@@ -399,7 +401,8 @@ async function analyzeRepositoryForInitialReport({
   accessToken,
   templateSections,
   projectMetadata,
-  onProgress
+  onProgress,
+  jobId // Optional job ID for key assignment
 }) {
   console.log(`[RepoAnalyzer] Starting full repository analysis for ${owner}/${repo}`);
 
@@ -430,7 +433,8 @@ async function analyzeRepositoryForInitialReport({
     repoContext,
     templateSections,
     projectMetadata,
-    onProgress
+    onProgress,
+    jobId
   });
 
   const successCount = generatedContent.filter(r => r.success).length;

@@ -8,13 +8,15 @@ const KeyPoolManager = require('./keyPoolManager');
 // Using Llama 3.3 70B for high-quality analysis and writing
 // Using Llama 3.1 8B as a fast fallback
 const MODELS = {
+  // Using Llama 3.3 70B as primary - better free tier limits (30 RPM, higher TPM)
+  // The specialized models (qwen, gpt-oss) have stricter limits (60 RPM but only 1K RPD, 6K TPM)
   ANALYZER: {
-    PRIMARY: 'openai/gpt-oss-120b',
-    FALLBACK: 'meta-llama/llama-4-scout-17b-16e-instruct'
+    PRIMARY: 'llama-3.3-70b-versatile',
+    FALLBACK: 'llama-3.1-8b-instant'
   },
   WRITER: {
-    PRIMARY: 'qwen/qwen3-32b',
-    FALLBACK: 'meta-llama/llama-4-scout-17b-16e-instruct'
+    PRIMARY: 'llama-3.3-70b-versatile',
+    FALLBACK: 'llama-3.1-8b-instant'
   }
 };
 

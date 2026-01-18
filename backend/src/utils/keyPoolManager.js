@@ -5,7 +5,7 @@
  * and improve throughput for LLM requests.
  * 
  * Supports:
- * - Round-robin key selection
+ * - Job-level key assignment (same key for all calls in a job)
  * - Per-key usage tracking
  * - Graceful fallback to single key
  * - Key health monitoring
@@ -17,6 +17,7 @@ class KeyPoolManager {
     this.currentIndex = 0;
     this.keys = [];
     this.keyStats = new Map();
+    this.jobKeyAssignments = new Map(); // Track which key is assigned to which job
     
     // Parse keys from environment variable (comma-separated)
     if (keyString) {
@@ -44,6 +45,98 @@ class KeyPoolManager {
     });
     
     console.log(`[${serviceName}] Initialized key pool with ${this.keys.length} key(s)`);
+  }
+  
+  /**
+   * Assign a key to a specific job. This key will be used for all API calls within this job.
+   * @param {string} jobId - Unique identifier for the job
+   * @returns {Object} - { key: string, keyIndex: number, masked: string }
+   */
+  assignKeyForJob(jobId) {
+    // Check if this job already has a key assigned
+    if (this.jobKeyAssignments.has(jobId)) {
+      const keyIndex = this.jobKeyAssignments.get(jobId);
+      return {
+        key: this.keys[keyIndex],
+        keyIndex,
+        masked: this.maskKey(this.keys[keyIndex]),
+        poolSize: this.keys.length
+      };
+    }
+    
+    // Select a key using round-robin, skipping unhealthy keys if possible
+    let attempts = 0;
+    let selectedIndex = this.currentIndex;
+    
+    while (attempts < this.keys.length) {
+      const stats = this.keyStats.get(selectedIndex);
+      const now = Date.now();
+      
+      // Auto-heal if enough time passed
+      if (!stats.isHealthy && stats.lastUsed && (now - stats.lastUsed.getTime() > 60000)) {
+        stats.isHealthy = true;
+      }
+      
+      if (stats.isHealthy) {
+        break;
+      }
+      
+      selectedIndex = (selectedIndex + 1) % this.keys.length;
+      attempts++;
+    }
+    
+    // If all keys are unhealthy, just use the original round-robin choice
+    if (attempts >= this.keys.length) {
+      selectedIndex = this.currentIndex;
+    }
+    
+    this.currentIndex = (selectedIndex + 1) % this.keys.length;
+    
+    // Store the assignment
+    this.jobKeyAssignments.set(jobId, selectedIndex);
+    
+    const stats = this.keyStats.get(selectedIndex);
+    stats.lastUsed = new Date();
+    
+    console.log(`[${this.serviceName}] Assigned ${stats.key} to job ${jobId.substring(0, 8)}`);
+    
+    return {
+      key: this.keys[selectedIndex],
+      keyIndex: selectedIndex,
+      masked: this.maskKey(this.keys[selectedIndex]),
+      poolSize: this.keys.length
+    };
+  }
+  
+  /**
+   * Get the key for a job (must be already assigned via assignKeyForJob)
+   * @param {string} jobId - Job identifier
+   * @returns {Object|null} - Key info or null if not assigned
+   */
+  getKeyForJob(jobId) {
+    const keyIndex = this.jobKeyAssignments.get(jobId);
+    if (keyIndex === undefined) {
+      return null;
+    }
+    
+    const stats = this.keyStats.get(keyIndex);
+    stats.totalRequests++;
+    stats.lastUsed = new Date();
+    
+    return {
+      key: this.keys[keyIndex],
+      keyIndex,
+      masked: this.maskKey(this.keys[keyIndex]),
+      poolSize: this.keys.length
+    };
+  }
+  
+  /**
+   * Release a job's key assignment (call when job completes)
+   * @param {string} jobId - Job identifier
+   */
+  releaseJobKey(jobId) {
+    this.jobKeyAssignments.delete(jobId);
   }
   
   /**

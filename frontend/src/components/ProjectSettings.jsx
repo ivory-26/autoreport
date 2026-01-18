@@ -131,82 +131,85 @@ export function ProjectSettings({ project: initialProject }) {
             </div>
           )}
 
-          <div className="space-y-4">
-            <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Setup Instructions</h4>
-
+          {/* Only show instructions when webhook is NOT enabled */}
+          {!project.webhookEnabled && (
             <div className="space-y-4">
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">1</div>
-                <div className="text-sm">
-                  Go to your repository on GitHub:
-                  <a
-                    href={`${project.repoUrl}/settings/hooks`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ml-1 text-primary hover:underline inline-flex items-center gap-0.5"
-                  >
-                    Settings &gt; Webhooks &gt; Add webhook
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-              </div>
+              <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Setup Instructions</h4>
 
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">2</div>
-                <div className="flex-1 space-y-2">
-                  <p className="text-sm">Set <strong>Payload URL</strong> to:</p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 p-2 bg-muted rounded border text-xs break-all">
-                      {webhookUrl}
-                    </code>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => copyToClipboard(webhookUrl, setCopiedUrl)}
-                      className="h-8"
+              <div className="space-y-4">
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">1</div>
+                  <div className="text-sm">
+                    Go to your repository on GitHub:
+                    <a
+                      href={`${project.repoUrl}/settings/hooks`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-1 text-primary hover:underline inline-flex items-center gap-0.5"
                     >
-                      {copiedUrl ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    </Button>
+                      Settings &gt; Webhooks &gt; Add webhook
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">3</div>
-                <div className="flex-1 space-y-2">
-                  <p className="text-sm">Set <strong>Content type</strong> to <code>application/json</code></p>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">4</div>
-                <div className="flex-1 space-y-2">
-                  <p className="text-sm">Set <strong>Secret</strong> to:</p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 p-2 bg-muted rounded border text-xs font-mono">
-                      {project.webhookSecret || '••••••••••••••••••••••••••••••••'}
-                    </code>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => copyToClipboard(project.webhookSecret, setCopiedSecret)}
-                      className="h-8"
-                      disabled={!project.webhookSecret}
-                    >
-                      {copiedSecret ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    </Button>
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">2</div>
+                  <div className="flex-1 space-y-2">
+                    <p className="text-sm">Set <strong>Payload URL</strong> to:</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 p-2 bg-muted rounded border text-xs break-all">
+                        {webhookUrl}
+                      </code>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copyToClipboard(webhookUrl, setCopiedUrl)}
+                        className="h-8"
+                      >
+                        {copiedUrl ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">5</div>
-                <div className="text-sm">
-                  Select <strong>Just the push event</strong> and click <strong>Add webhook</strong>.
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">3</div>
+                  <div className="flex-1 space-y-2">
+                    <p className="text-sm">Set <strong>Content type</strong> to <code>application/json</code></p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">4</div>
+                  <div className="flex-1 space-y-2">
+                    <p className="text-sm">Set <strong>Secret</strong> to:</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 p-2 bg-muted rounded border text-xs font-mono">
+                        {project.webhookSecret || '••••••••••••••••••••••••••••••••'}
+                      </code>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copyToClipboard(project.webhookSecret, setCopiedSecret)}
+                        className="h-8"
+                        disabled={!project.webhookSecret}
+                      >
+                        {copiedSecret ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">5</div>
+                  <div className="text-sm">
+                    Select <strong>Just the push event</strong> and click <strong>Add webhook</strong>.
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="pt-4 border-t">
             <div className="flex items-start gap-2 text-xs text-muted-foreground">

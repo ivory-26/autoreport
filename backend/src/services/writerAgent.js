@@ -17,16 +17,26 @@ const PRIMARY_MODEL = MODELS.WRITER.PRIMARY;
 const FALLBACK_MODEL = MODELS.WRITER.FALLBACK;
 
 /**
- * Get a Groq client with the next available API key from the shared pool
+ * Get a Groq client with an API key.
+ * If jobId is provided, uses job-level key assignment (same key for entire job).
+ * Otherwise falls back to random key selection.
+ * @param {string} [jobId] - Optional job ID for consistent key usage within a job
  * @returns {Promise<Object>} - { client: Groq, keyInfo: { keyIndex, masked, poolSize } }
  */
-async function getClientWithKey() {
+async function getClientWithKey(jobId = null) {
   const pool = getGroqKeyPool();
   if (!pool) {
     throw new Error('GROQ_API_KEYS environment variable is not set.');
   }
   
-  const keyInfo = await pool.getNextKey();
+  let keyInfo;
+  if (jobId) {
+    // Use job-level key assignment - same key for all calls in this job
+    keyInfo = pool.getKeyForJob(jobId) || pool.assignKeyForJob(jobId);
+  } else {
+    // Fallback to random selection for standalone calls
+    keyInfo = await pool.getNextKey();
+  }
   
   const client = new Groq({
     apiKey: keyInfo.key
@@ -122,6 +132,7 @@ function validateWriterResult(result, targetSection) {
  * @param {Object} params.targetSection - Target section configuration
  * @param {Object} params.projectMetadata - Project information
  * @param {Object} params.commitInfo - Commit information
+ * @param {string} [params.jobId] - Optional job ID for consistent key usage
  * @returns {Promise<Object>} - Generated content
  */
 async function generate({
@@ -131,7 +142,8 @@ async function generate({
   commitInfo,
   authorInfo,
   repoContext, // Optional: for initial generation
-  allSections   // Optional: template sections for context
+  allSections,  // Optional: template sections for context
+  jobId        // Optional job ID for key assignment
 }) {
   // Force a higher timeout for writer agent regardless of global env settings if they are too low
   const timeoutMs = Math.max(getTimeoutFromEnv(120000), 120000); 
@@ -140,7 +152,7 @@ async function generate({
 
   // Helper function to call the API with a specific model
   async function callWithModel(modelName) {
-    const { client, keyInfo } = await getClientWithKey();
+    const { client, keyInfo } = await getClientWithKey(jobId);
     const pool = getGroqKeyPool();
 
     try {
@@ -298,14 +310,15 @@ async function generate({
  * Generate introduction for a new section
  * @param {Object} section - Section configuration
  * @param {Object} projectMetadata - Project information
+ * @param {string} [jobId] - Optional job ID for consistent key usage
  * @returns {Promise<string>} - Introduction text
  */
-async function generateSectionIntro(section, projectMetadata) {
+async function generateSectionIntro(section, projectMetadata, jobId = null) {
   const timeoutMs = getTimeoutFromEnv(15000); // Shorter timeout for intros
 
   // Helper function to call the API with a specific model
   async function callWithModel(modelName) {
-    const { client, keyInfo } = await getClientWithKey();
+    const { client, keyInfo } = await getClientWithKey(jobId);
     const pool = getGroqKeyPool();
     const prompt = createSectionIntroPrompt(section, projectMetadata);
 
@@ -474,6 +487,7 @@ function selectBestSection(analysisResult, templateSections) {
  * @param {Object} params.report - Existing report with sections
  * @param {Object} params.projectMetadata - Project metadata
  * @param {Object} params.commitInfo - Commit information
+ * @param {string} [params.jobId] - Optional job ID for consistent key usage
  * @returns {Promise<Array>} - Array of generated content results
  */
 async function generateForAllSections({
@@ -482,7 +496,8 @@ async function generateForAllSections({
   report,
   projectMetadata,
   commitInfo,
-  authorInfo // Add authorInfo param
+  authorInfo, // Add authorInfo param
+  jobId       // Optional job ID for key assignment
 }) {
   const results = [];
 
@@ -554,7 +569,8 @@ async function generateForAllSections({
         projectMetadata,
         commitInfo,
         authorInfo, // Pass authorInfo
-        allSections: templateSections // Pass all sections for context
+        allSections: templateSections, // Pass all sections for context
+        jobId // Pass job ID for key assignment
       });
       
       if (result.success) {

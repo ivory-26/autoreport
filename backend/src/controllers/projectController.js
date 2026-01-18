@@ -15,6 +15,7 @@ const { autoLogger } = require('../services/autoLogger');
 const { analyzeRepositoryForInitialReport } = require('../services/repositoryAnalyzerService');
 const { webhookQueue } = require('../services/queue');
 const { notifyUserOnGitHub } = require('../services/notificationService');
+const { getGroqKeyPool } = require('../utils/aiConfig');
 
 // Fallback templates for when database is empty
 const fallbackTemplates = [
@@ -593,7 +594,8 @@ async function processInitialReportJob(job) {
       },
       onProgress: async (progress) => {
         await webhookQueue.sendProgress(job.id, progress);
-      }
+      },
+      jobId: job.id // Pass job ID for consistent key usage
     });
 
     if (!repoAnalysisResult.success) {
@@ -773,7 +775,8 @@ async function processInitialReportJob(job) {
     templateSections: template.sections,
     onProgress: async (progress) => {
       await webhookQueue.sendProgress(job.id, progress);
-    }
+    },
+    jobId: job.id // Pass job ID for consistent key usage
   });
 
   console.log('[InitialReportJob] Analysis result:', {
@@ -804,7 +807,8 @@ async function processInitialReportJob(job) {
       hash: lastCommit.sha,
       message: lastCommit.commit.message,
       author: lastCommit.commit.author.name
-    }
+    },
+    jobId: job.id // Pass job ID for consistent key usage
   });
 
   console.log('[InitialReportJob] Writer results:', writerResults.map(r => ({
@@ -905,6 +909,12 @@ async function processInitialReportJob(job) {
     }
   } catch (err) {
     console.error('[InitialReportJob] Failed to clear generating flag:', err.message);
+  }
+  
+  // Release key assignment
+  const pool = getGroqKeyPool();
+  if (pool && job.id) {
+    pool.releaseJobKey(job.id);
   }
   }
 }

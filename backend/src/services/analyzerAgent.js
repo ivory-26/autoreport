@@ -22,16 +22,26 @@ const MAX_DIFF_TOKENS = 4000; // ~16000 chars assuming 4 chars per token
 const CHUNKING_THRESHOLD = DEFAULT_CHUNK_SIZE; // Use chunking for diffs larger than this
 
 /**
- * Get a Groq client with the next available API key from the shared pool
+ * Get a Groq client with an API key.
+ * If jobId is provided, uses job-level key assignment (same key for entire job).
+ * Otherwise falls back to random key selection.
+ * @param {string} [jobId] - Optional job ID for consistent key usage within a job
  * @returns {Promise<Object>} - { client: Groq, keyInfo: { keyIndex, masked, poolSize } }
  */
-async function getClientWithKey() {
+async function getClientWithKey(jobId = null) {
   const pool = getGroqKeyPool();
   if (!pool) {
     throw new Error('GROQ_API_KEYS environment variable is not set.');
   }
   
-  const keyInfo = await pool.getNextKey();
+  let keyInfo;
+  if (jobId) {
+    // Use job-level key assignment - same key for all calls in this job
+    keyInfo = pool.getKeyForJob(jobId) || pool.assignKeyForJob(jobId);
+  } else {
+    // Fallback to random selection for standalone calls
+    keyInfo = await pool.getNextKey();
+  }
   
   const client = new Groq({
     apiKey: keyInfo.key
@@ -137,6 +147,7 @@ function validateAnalysisResult(result) {
  * @param {Array} params.filesChanged - List of changed files
  * @param {Object} params.projectContext - Project context
  * @param {Array} params.templateSections - Template sections for routing
+ * @param {string} [params.jobId] - Optional job ID for consistent key usage
  * @returns {Promise<Object>} - Analysis result
  */
 async function analyze({
@@ -147,7 +158,8 @@ async function analyze({
   filesChanged,
   projectContext,
   templateSections,
-  onProgress // Optional progress callback for heartbeat
+  onProgress, // Optional progress callback for heartbeat
+  jobId // Optional job ID for key assignment
 }) {
   const timeoutMs = Math.max(getTimeoutFromEnv(60000), 60000);
 
@@ -162,13 +174,14 @@ async function analyze({
       filesChanged,
       projectContext,
       templateSections,
-      onProgress
+      onProgress,
+      jobId
     });
   }
 
   // Helper function to call the API with a specific model
   async function callWithModel(modelName, diffContent) {
-    const { client, keyInfo } = await getClientWithKey();
+    const { client, keyInfo } = await getClientWithKey(jobId);
     const pool = getGroqKeyPool();
 
     try {
@@ -343,13 +356,14 @@ async function analyzeChunked({
   filesChanged,
   projectContext,
   templateSections,
-  onProgress
+  onProgress,
+  jobId
 }) {
   const timeoutMs = getTimeoutFromEnv(45000); // Longer timeout for chunks
 
   // Chunk the diff
   const chunks = chunkDiff(diff);
-  console.log(`[Analyzer] Processing ${chunks.length} chunks for commit ${commitHash?.substring(0, 7)}`);
+  console.log(`[Analyzer] Processing ${chunks.length} chunks for commit ${commitHash?.substring(0, 7)}${jobId ? ` (job: ${jobId.substring(0, 8)})` : ''}`);
 
   const analyses = [];
   let successfulChunks = 0;
@@ -383,7 +397,7 @@ async function analyzeChunked({
         templateSections
       });
 
-      const { client, keyInfo } = await getClientWithKey();
+      const { client, keyInfo } = await getClientWithKey(jobId);
       const pool = getGroqKeyPool();
 
       const chatCompletion = await withTimeout(

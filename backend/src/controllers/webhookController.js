@@ -14,6 +14,7 @@ const { processWebhookPayload } = require('../services/gitParser');
 const { analyze } = require('../services/analyzerAgent');
 const { generateForAllSections } = require('../services/writerAgent');
 const { autoLogger, STAGES } = require('../services/autoLogger');
+const { getGroqKeyPool } = require('../utils/aiConfig');
 
 /**
  * Verify GitHub webhook signature
@@ -270,7 +271,8 @@ async function processWebhookJob(job) {
       templateSections: template.sections,
       onProgress: async (progress) => {
         await webhookQueue.sendProgress(job.id, progress);
-      }
+      },
+      jobId: job.id // Pass job ID for consistent key usage
     });
 
     console.log('[Pipeline] Analysis result:', JSON.stringify({
@@ -304,7 +306,8 @@ async function processWebhookJob(job) {
         message: commit.message,
         author: commit.author
       },
-      authorInfo // Pass role/collaborator context
+      authorInfo, // Pass role/collaborator context
+      jobId: job.id // Pass job ID for consistent key usage
     });
 
     console.log('[Pipeline] Writer results:', writerResults.map(r => ({
@@ -461,6 +464,12 @@ async function processWebhookJob(job) {
     });
 
     throw error; // Re-throw for queue retry logic
+  } finally {
+    // Release key assignment
+    const pool = getGroqKeyPool();
+    if (pool && job.id) {
+      pool.releaseJobKey(job.id);
+    }
   }
 }
 
