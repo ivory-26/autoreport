@@ -13,6 +13,7 @@ export const authOptions = {
       authorization: {
         params: {
           scope: 'read:user user:email repo',
+          prompt: 'select_account', // Force account selection for switching accounts
         },
       },
     }),
@@ -25,6 +26,7 @@ export const authOptions = {
       authorization: {
         params: {
           scope: 'read:user user:email public_repo',
+          prompt: 'select_account', // Force account selection for switching accounts
         },
       },
     }),
@@ -35,7 +37,14 @@ export const authOptions = {
         try {
           await dbConnect();
           // Profile contains raw GitHub data (id, login, etc) coming from OAuth
-          await User.findOrCreateFromGitHub(profile);
+          const dbUser = await User.findOrCreateFromGitHub(profile);
+          
+          // Update preferred provider if it has changed
+          if (dbUser.preferredProvider !== account.provider) {
+            dbUser.preferredProvider = account.provider;
+            await dbUser.save();
+          }
+          
           return true;
         } catch (error) {
           console.error('Error in signIn callback:', error);
@@ -66,14 +75,29 @@ export const authOptions = {
       return session;
     },
   },
-  // Use default NextAuth pages (custom pages removed for now)
-  // pages: {
-  //   signIn: '/auth/signin',
-  //   error: '/auth/error',
-  // },
+  // Custom authentication pages
+  pages: {
+    signIn: '/auth/signin',
+    signOut: '/',
+    error: '/auth/signin', // Redirect to signin on error
+  },
   session: {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days
+  },
+  events: {
+    async signOut({ token }) {
+      // Log signout event
+      console.log('User signed out:', token?.githubUsername);
+    },
+    async signIn({ user, account, profile, isNewUser }) {
+      // Track if this is a new user signup or returning login
+      if (isNewUser) {
+        console.log('New user signed up:', profile?.login);
+      } else {
+        console.log('User logged in:', profile?.login);
+      }
+    },
   },
   secret: process.env.NEXTAUTH_SECRET,
 };

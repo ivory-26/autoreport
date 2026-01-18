@@ -21,6 +21,13 @@ const userSchema = new mongoose.Schema({
     index: true
   },
   
+  // OAuth preferences
+  preferredProvider: {
+    type: String,
+    enum: ['github', 'github-public'],
+    default: 'github'
+  },
+  
   // Profile information
   email: {
     type: String,
@@ -34,9 +41,18 @@ const userSchema = new mongoose.Schema({
   },
   
   // Activity tracking
+  firstLogin: {
+    type: Date,
+    default: Date.now,
+    immutable: true // Can't be changed after creation
+  },
   lastLogin: {
     type: Date,
     default: Date.now
+  },
+  loginCount: {
+    type: Number,
+    default: 1
   },
   
   // User preferences
@@ -63,25 +79,35 @@ const userSchema = new mongoose.Schema({
 userSchema.statics.findOrCreateFromGitHub = async function(profile) {
   const { id: githubId, login: username, email, name: displayName, avatar_url: avatarUrl } = profile;
   
-  const user = await this.findOneAndUpdate(
-    { githubId },
-    {
-      $set: {
-        username,
-        email: email || undefined,
-        displayName: displayName || username,
-        avatarUrl,
-        lastLogin: new Date()
-      }
-    },
-    { 
-      new: true, 
-      upsert: true,
-      runValidators: true 
-    }
-  );
+  // First check if user exists
+  const existingUser = await this.findOne({ githubId });
   
-  return user;
+  if (existingUser) {
+    // User exists - this is a login, not a signup
+    existingUser.username = username;
+    existingUser.email = email || existingUser.email;
+    existingUser.displayName = displayName || username;
+    existingUser.avatarUrl = avatarUrl;
+    existingUser.lastLogin = new Date();
+    existingUser.loginCount = (existingUser.loginCount || 0) + 1;
+    
+    await existingUser.save();
+    return existingUser;
+  }
+  
+  // User doesn't exist - this is a signup
+  const newUser = await this.create({
+    githubId,
+    username,
+    email: email || undefined,
+    displayName: displayName || username,
+    avatarUrl,
+    firstLogin: new Date(),
+    lastLogin: new Date(),
+    loginCount: 1
+  });
+  
+  return newUser;
 };
 
 /**

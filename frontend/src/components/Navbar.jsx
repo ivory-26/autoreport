@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { signIn, signOut, useSession } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -12,14 +12,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
 import { ModeToggle } from '@/components/ui/mode-toggle';
 import { motion } from 'framer-motion';
 import { LayoutDashboard, LogOut, Settings, Github } from 'lucide-react';
@@ -105,55 +97,29 @@ export function Navbar() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="cursor-pointer text-red-600 focus:text-red-600"
-                  onClick={() => signOut({ callbackUrl: '/' })}
+                  asChild
                 >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
+                  <Link href="/auth/signout">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign out
+                  </Link>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Dialog>
-              <DialogTrigger asChild>
+            <div className="flex items-center gap-2">
+              <Link href="/auth/signin">
+                <Button variant="ghost" size="sm">
+                  Login
+                </Button>
+              </Link>
+              <Link href="/auth/signup">
                 <Button variant="default" size="sm" className="gap-2 shadow-lg shadow-primary/20">
                   <Github className="h-4 w-4" />
-                  Sign In
+                  Sign Up
                 </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Sign in with GitHub</DialogTitle>
-                  <DialogDescription>
-                    Choose how you want to connect your repositories.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="flex flex-col gap-3 py-4">
-                  <Button
-                    onClick={() => signIn('github')}
-                    className="w-full justify-start h-auto py-4 px-4"
-                    variant="default"
-                  >
-                    <Github className="h-5 w-5 mr-3 mt-1" />
-                    <div className="flex flex-col items-start text-left">
-                      <span className="font-semibold">All Repositories</span>
-                      <span className="text-xs opacity-90">Access both public and private repos (Recommended).</span>
-                    </div>
-                  </Button>
-
-                  <Button
-                    onClick={() => signIn('github-public')}
-                    className="w-full justify-start h-auto py-4 px-4"
-                    variant="outline"
-                  >
-                    <Github className="h-5 w-5 mr-3 mt-1" />
-                    <div className="flex flex-col items-start text-left">
-                      <span className="font-semibold">Public Repos only</span>
-                      <span className="text-xs text-muted-foreground">Access only public repositories.</span>
-                    </div>
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+              </Link>
+            </div>
           )}
         </div>
       </div>

@@ -2,6 +2,9 @@ import { withAuth } from 'next-auth/middleware';
 
 // Middleware function that protects routes
 export default withAuth({
+  pages: {
+    signIn: '/auth/signin', // Redirect to custom signin page
+  },
   callbacks: {
     authorized: ({ token }) => !!token,
   },
