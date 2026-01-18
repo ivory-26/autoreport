@@ -21,7 +21,7 @@ async function streamJobProgress(req, res) {
   console.log(`[Progress] SSE connection requested for job ${jobId.substring(0, 8)}`);
 
   // Check if job exists
-  const job = webhookQueue.getJob(jobId);
+  const job = await webhookQueue.getJob(jobId);
   
   if (!job) {
     return res.status(404).json({
@@ -48,7 +48,7 @@ async function streamJobProgress(req, res) {
   res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
   
   // Send initial connection message
-  const totalJobs = webhookQueue.length;
+  const totalJobs = await webhookQueue.getLength();
   res.write(`data: ${JSON.stringify({ 
     type: 'connected', 
     jobId, 
@@ -88,7 +88,7 @@ async function streamJobProgress(req, res) {
 async function getJobStatus(req, res) {
   const { jobId } = req.params;
 
-  const job = webhookQueue.getJob(jobId);
+  const job = await webhookQueue.getJob(jobId);
 
   if (!job) {
     return res.status(404).json({
@@ -101,7 +101,7 @@ async function getJobStatus(req, res) {
   let queuePosition = null;
   if (job.status === JOB_STATUS.PENDING || job.status === JOB_STATUS.PROCESSING) {
     // Queue position is approximate since we use fair queueing per user
-    queuePosition = webhookQueue.length;  
+    queuePosition = await webhookQueue.getLength();  
   }
 
   res.json({
@@ -129,7 +129,7 @@ async function getJobStatus(req, res) {
  * Get overall queue status
  */
 async function getQueueStatus(req, res) {
-  const status = webhookQueue.getStatus();
+  const status = await webhookQueue.getStatus();
   
   res.json({
     success: true,

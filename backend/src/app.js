@@ -121,6 +121,12 @@ async function initializeApp() {
         console.log('✅ App initialization complete');
         console.log('📋 Queue processor registered');
         
+        // Step 3: Recover any stuck jobs from previous crash
+        const recoveredJobs = await webhookQueue.recoverStuckJobs();
+        if (recoveredJobs > 0) {
+            console.log(`🔄 Recovered ${recoveredJobs} stuck jobs from previous crash`);
+        }
+        
         // Step 3: Fetch missed webhooks from GitHub (async, don't block startup)
         // This runs in background to recover webhooks missed during downtime
         const { fetchMissedWebhooks } = require('./services/webhookResilience');

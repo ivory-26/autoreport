@@ -123,7 +123,7 @@ async function handleGitHubWebhook(req, res) {
     }
 
     // Check if commit is already in queue
-    if (webhookQueue.isCommitQueued(processedPayload.commit.hash)) {
+    if (await webhookQueue.isCommitQueued(processedPayload.commit.hash)) {
       return res.status(200).json({ 
         message: 'Commit already queued',
         commitHash: processedPayload.commit.shortHash
@@ -131,7 +131,7 @@ async function handleGitHubWebhook(req, res) {
     }
 
     // Enqueue the job
-    const jobId = webhookQueue.enqueue({
+    const jobId = await webhookQueue.enqueue({
       type: 'webhook',
       userId: project.owner, // For Fair Queueing
       projectId: project._id,
@@ -150,7 +150,7 @@ async function handleGitHubWebhook(req, res) {
       message: 'Webhook received',
       jobId,
       commitHash: processedPayload.commit.shortHash,
-      queuePosition: webhookQueue.length,
+      queuePosition: await webhookQueue.getLength(),
       progressUrl: `/api/progress/${jobId}`,
       streamUrl: `/api/progress/${jobId}/stream`
     });
@@ -229,7 +229,7 @@ async function processWebhookJob(job) {
   console.log(`[Pipeline] Processing commit by ${authorInfo.username} (${authorInfo.role})`);
 
   try {
-    webhookQueue.sendProgress(job.id, {
+    await webhookQueue.sendProgress(job.id, {
       stage: 'starting',
       message: 'Processing webhook payload'
     });
@@ -247,7 +247,7 @@ async function processWebhookJob(job) {
       report = await createReportFromTemplate(projectId, template, project.name);
     }
 
-    webhookQueue.sendProgress(job.id, {
+    await webhookQueue.sendProgress(job.id, {
       stage: 'analyzing',
       message: `Analyzing commit ${commit.hash?.substring(0, 7)}`
     });
@@ -268,8 +268,8 @@ async function processWebhookJob(job) {
         techStack: project.settings?.techStack || []
       },
       templateSections: template.sections,
-      onProgress: (progress) => {
-        webhookQueue.sendProgress(job.id, progress);
+      onProgress: async (progress) => {
+        await webhookQueue.sendProgress(job.id, progress);
       }
     });
 
@@ -283,7 +283,7 @@ async function processWebhookJob(job) {
     pipelineTrace.analysisCompleted = new Date();
     pipelineTrace.writingStarted = new Date();
 
-    webhookQueue.sendProgress(job.id, {
+    await webhookQueue.sendProgress(job.id, {
       stage: 'writing',
       message: 'Generating content for report sections'
     });
@@ -316,7 +316,7 @@ async function processWebhookJob(job) {
 
     pipelineTrace.writingCompleted = new Date();
 
-    webhookQueue.sendProgress(job.id, {
+    await webhookQueue.sendProgress(job.id, {
       stage: 'saving',
       message: 'Saving updates to database'
     });
@@ -518,8 +518,8 @@ function determineErrorStage(error, pipelineTrace) {
  * @param {Request} req - Express request
  * @param {Response} res - Express response
  */
-function getQueueStatus(req, res) {
-  res.json(webhookQueue.getStatus());
+async function getQueueStatus(req, res) {
+  res.json(await webhookQueue.getStatus());
 }
 
 /**
@@ -527,11 +527,11 @@ function getQueueStatus(req, res) {
  * @param {Request} req - Express request
  * @param {Response} res - Express response
  */
-function healthCheck(req, res) {
+async function healthCheck(req, res) {
   res.json({
     status: 'ok',
     queue: {
-      length: webhookQueue.length,
+      length: await webhookQueue.getLength(),
       processing: webhookQueue.processing
     },
     timestamp: new Date()

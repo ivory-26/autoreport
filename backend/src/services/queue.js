@@ -1,47 +1,29 @@
 /**
- * Webhook Queue Service
+ * Webhook Queue Service (MongoDB-backed)
  * 
- * In-memory queue for processing GitHub webhooks sequentially.
- * Prevents race conditions when multiple commits arrive simultaneously.
- * Includes progress tracking and heartbeat support for long-running jobs.
+ * Persistent queue for processing GitHub webhooks sequentially.
+ * Uses MongoDB for job storage to survive server restarts.
+ * Implements fair queueing (round-robin by user/project).
  */
 
-const crypto = require('crypto');
 const EventEmitter = require('events');
+const { Job, JOB_STATUS } = require('../models/Job');
 const { autoLogger, STAGES } = require('./autoLogger');
-
-/**
- * Job statuses
- */
-const JOB_STATUS = {
-  PENDING: 'pending',
-  PROCESSING: 'processing',
-  COMPLETED: 'completed',
-  FAILED: 'failed',
-  DEAD: 'dead'
-};
 
 class WebhookQueue extends EventEmitter {
   constructor() {
     super();
-    // User-based queues for Fair Queueing (prevent HoL blocking)
-    this.userQueues = new Map(); // userId -> Array of jobs
-    this.activeUserIds = []; // Round-robin list of userIds
-    
-    // Legacy single queue usage is deprecated internally but we keep it for monitoring/length if needed,
-    // though we should calculate total length dynamically now.
-    // We will use this.userQueues as the source of truth.
-    
     this.processing = false;
-    this.concurrency = 1; // Global concurrency limit to respect Rate Limits
+    this.concurrency = this.calculateConcurrency(); // Dynamic based on API keys
     this.maxAttempts = 3;
     this.processor = null;
     this.maxQueuePerUser = 10; // Prevent abuse
     
-    this.jobHistory = new Map();
-    this.maxHistorySize = 100;
-    
+    // In-memory SSE progress listeners (can't persist connections)
     this.progressListeners = new Map();
+    
+    // Track last processed bucket for round-robin
+    this.lastProcessedBucket = null;
     
     this.stats = {
       totalProcessed: 0,
@@ -60,35 +42,56 @@ class WebhookQueue extends EventEmitter {
   }
 
   /**
+   * Calculate optimal concurrency based on number of API keys
+   * @returns {number} - Concurrency level
+   */
+  calculateConcurrency() {
+    try {
+      // Check for GROQ_API_KEYS (comma-separated) or single GROQ_API_KEY
+      const keysString = process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY;
+      if (!keysString) return 1;
+      
+      const keyCount = keysString.split(',').filter(k => k.trim()).length;
+      
+      // Match concurrency to number of keys, but cap at 5 for safety
+      const concurrency = Math.min(keyCount, 5);
+      
+      if (keyCount > 1) {
+        console.log(`[Queue] Using concurrency=${concurrency} (${keyCount} API keys available)`);
+      }
+      
+      return concurrency;
+    } catch (error) {
+      console.warn('[Queue] Error calculating concurrency, defaulting to 1:', error.message);
+      return 1;
+    }
+  }
+
+  /**
    * Add a job to the queue
    * @param {Object} jobData - The job data. MUST include userId or projectId for fairness.
-   * @returns {string} - Job ID
+   * @returns {Promise<string>} - Job ID
    */
-  enqueue(jobData) {
-    const jobId = crypto.randomUUID();
-    
+  async enqueue(jobData) {
     // Determine the bucket key (userId or projectId or 'global')
     const bucketKey = jobData.userId ? String(jobData.userId) : 
                       (jobData.projectId ? String(jobData.projectId) : 'global');
     
-    // Get or create user queue
-    if (!this.userQueues.has(bucketKey)) {
-      this.userQueues.set(bucketKey, []);
-    }
+    // Check user queue limit
+    const userJobCount = await Job.countDocuments({ 
+      bucketKey, 
+      status: { $in: [JOB_STATUS.PENDING, JOB_STATUS.PROCESSING] } 
+    });
     
-    const userQueue = this.userQueues.get(bucketKey);
-    
-    // Check user limit
-    if (userQueue.length >= this.maxQueuePerUser) {
-      console.warn(`[Queue] User ${bucketKey} exceeded max queue size (${this.maxQueuePerUser}). Dropping oldest? No, rejecting.`);
-      // For now, we allow it but log warning, or maybe we really should reject.
-      // Let's just log for now to avoid losing data in this iteration, but strictly we should reject.
+    if (userJobCount >= this.maxQueuePerUser) {
+      console.warn(`[Queue] User ${bucketKey} exceeded max queue size (${this.maxQueuePerUser}). Rejecting job.`);
+      throw new Error(`Queue limit exceeded for bucket ${bucketKey}`);
     }
 
-    const job = {
-      id: jobId,
+    // Create job document
+    const job = new Job({
+      bucketKey,
       data: jobData,
-      bucketKey, // Store key for reference
       status: JOB_STATUS.PENDING,
       queuedAt: new Date(),
       attempts: 0,
@@ -97,54 +100,46 @@ class WebhookQueue extends EventEmitter {
         webhookReceived: jobData.receivedAt || new Date(),
         queuedAt: new Date()
       }
-    };
+    });
 
-    userQueue.push(job);
-    
-    // Add user to active list if not already present
-    if (!this.activeUserIds.includes(bucketKey)) {
-      this.activeUserIds.push(bucketKey);
-    }
+    await job.save();
 
-    console.log(`[Queue] Job ${jobId.substring(0, 8)} enqueued for ${bucketKey}. Queue size for user: ${userQueue.length}`);
+    console.log(`[Queue] Job ${job._id.toString().substring(0, 8)} enqueued for ${bucketKey}. User queue size: ${userJobCount + 1}`);
 
     // Emit job enqueued event
-    this.emit('jobEnqueued', { jobId, bucketKey, position: userQueue.length });
+    this.emit('jobEnqueued', { jobId: job._id.toString(), bucketKey, position: userJobCount + 1 });
 
     // Start processing if not already running
     this.process();
 
-    return jobId;
+    return job._id.toString();
   }
 
-  // ... sendProgress, addProgressListener, removeProgressListener, addToHistory methods remain same ... 
-  
   /**
    * Send a progress update for a job (heartbeat)
    * @param {string} jobId - Job ID
    * @param {Object} progress - Progress data
    */
-  sendProgress(jobId, progress) {
-    const job = this.getJob(jobId);
-    if (!job) return;
-
+  async sendProgress(jobId, progress) {
     const progressData = {
-      jobId,
-      timestamp: new Date().toISOString(),
-      ...progress
+      stage: progress.stage,
+      message: progress.message,
+      percentage: progress.percentage,
+      timestamp: new Date()
     };
 
-    // Store progress in job
-    if (!job.progress) job.progress = [];
-    job.progress.push(progressData);
+    // Update job in database
+    await Job.findByIdAndUpdate(jobId, {
+      $push: { progress: progressData }
+    });
 
     // Emit progress event
-    this.emit('progress', progressData);
+    this.emit('progress', { jobId, ...progressData });
 
     // Send to any SSE listeners
     const listeners = this.progressListeners.get(jobId);
     if (listeners) {
-      const sseData = `data: ${JSON.stringify(progressData)}\n\n`;
+      const sseData = `data: ${JSON.stringify({ jobId, timestamp: new Date().toISOString(), ...progress })}\n\n`;
       for (const res of listeners) {
         try {
           res.write(sseData);
@@ -187,16 +182,16 @@ class WebhookQueue extends EventEmitter {
   }
 
   /**
-   * Store a completed/failed job in history
-   * @param {Object} job - The job to store
+   * Mark a job as completed and notify listeners
+   * @param {Object} job - The job document
    */
-  addToHistory(job) {
+  async addToHistory(job) {
     // Remove from progress listeners
-    const listeners = this.progressListeners.get(job.id);
+    const listeners = this.progressListeners.get(job._id.toString());
     if (listeners) {
       // Send completion event to all listeners
       const sseData = `data: ${JSON.stringify({ 
-        jobId: job.id, 
+        jobId: job._id.toString(), 
         stage: 'complete',
         status: job.status,
         timestamp: new Date().toISOString()
@@ -207,154 +202,201 @@ class WebhookQueue extends EventEmitter {
           res.end();
         } catch (e) { /* ignore */ }
       }
-      this.progressListeners.delete(job.id);
-    }
-
-    // Add to history
-    this.jobHistory.set(job.id, {
-      ...job,
-      archivedAt: new Date()
-    });
-
-    // Prune old history
-    if (this.jobHistory.size > this.maxHistorySize) {
-      const oldestKey = this.jobHistory.keys().next().value;
-      this.jobHistory.delete(oldestKey);
+      this.progressListeners.delete(job._id.toString());
     }
   }
 
+  /**
+   * Get the next job to process using fair queueing (round-robin by bucket)
+   * @returns {Promise<Object|null>} - Job document or null
+   */
+  async getNextJob() {
+    // Get all distinct bucket keys with pending jobs
+    const buckets = await Job.distinct('bucketKey', { 
+      status: JOB_STATUS.PENDING,
+      $or: [
+        { retryAfter: null },
+        { retryAfter: { $lte: new Date() } }
+      ]
+    });
+
+    if (buckets.length === 0) return null;
+
+    // Round-robin: find the next bucket after lastProcessedBucket
+    let nextBucketIndex = 0;
+    if (this.lastProcessedBucket) {
+      const currentIndex = buckets.indexOf(this.lastProcessedBucket);
+      if (currentIndex !== -1) {
+        nextBucketIndex = (currentIndex + 1) % buckets.length;
+      }
+    }
+    const nextBucket = buckets[nextBucketIndex];
+
+    // Atomically find and update the oldest pending job in this bucket
+    const job = await Job.findOneAndUpdate(
+      { 
+        bucketKey: nextBucket, 
+        status: JOB_STATUS.PENDING,
+        $or: [
+          { retryAfter: null },
+          { retryAfter: { $lte: new Date() } }
+        ]
+      },
+      { 
+        $set: { 
+          status: JOB_STATUS.PROCESSING,
+          startedAt: new Date(),
+          'pipelineTrace.processingStarted': new Date()
+        },
+        $inc: { attempts: 1 }
+      },
+      { 
+        sort: { queuedAt: 1 },
+        new: true 
+      }
+    );
+
+    if (job) {
+      this.lastProcessedBucket = nextBucket;
+    }
+
+    return job;
+  }
+
+  /**
+   * Main processing loop
+   */
   async process() {
     if (this.processing || !this.processor) return;
 
-    if (this.activeUserIds.length === 0) return;
-
     this.processing = true;
 
-    while (this.activeUserIds.length > 0) {
-      // Round Robin: Take first user
-      const currentBucketKey = this.activeUserIds.shift();
-      const userQueue = this.userQueues.get(currentBucketKey);
+    try {
+      let job;
+      while ((job = await this.getNextJob()) !== null) {
+        const jobId = job._id.toString();
 
-      if (!userQueue || userQueue.length === 0) {
-        // Queue empty/gone, clean up map
-        this.userQueues.delete(currentBucketKey);
-        continue;
-      }
+        try {
+          console.log(`[Queue] Processing job ${jobId.substring(0, 8)} for ${job.bucketKey} (attempt ${job.attempts}/${this.maxAttempts})`);
 
-      // Take first job from this user
-      const job = userQueue[0]; 
+          // Execute the processor (pass job-like object with id property for compatibility)
+          await this.processor({
+            id: jobId,
+            data: job.data,
+            bucketKey: job.bucketKey,
+            attempts: job.attempts,
+            pipelineTrace: job.pipelineTrace
+          });
 
-      try {
-        job.status = JOB_STATUS.PROCESSING;
-        job.startedAt = new Date();
-        job.pipelineTrace.processingStarted = job.startedAt;
-        job.attempts++;
+          // Success - update job
+          const completedAt = new Date();
+          await Job.findByIdAndUpdate(jobId, {
+            $set: {
+              status: JOB_STATUS.COMPLETED,
+              completedAt,
+              'pipelineTrace.processingCompleted': completedAt
+            }
+          });
 
-        console.log(`[Queue] Processing job ${job.id.substring(0, 8)} for ${currentBucketKey} (attempt ${job.attempts}/${this.maxAttempts})`);
+          this.stats.totalProcessed++;
+          console.log(`[Queue] Job ${jobId.substring(0, 8)} completed in ${completedAt - job.startedAt}ms`);
 
-        // Execute the processor
-        await this.processor(job);
+          await this.addToHistory(job);
 
-        // Success
-        job.status = JOB_STATUS.COMPLETED;
-        job.completedAt = new Date();
-        job.pipelineTrace.processingCompleted = job.completedAt;
-        this.stats.totalProcessed++;
+        } catch (error) {
+          console.error(`[Queue] Job ${jobId.substring(0, 8)} failed:`, error.message);
 
-        console.log(`[Queue] Job ${job.id.substring(0, 8)} completed in ${job.completedAt - job.startedAt}ms`);
+          const errorEntry = {
+            attempt: job.attempts,
+            error: error.message,
+            timestamp: new Date()
+          };
 
-        // Remove from user queue
-        userQueue.shift();
-        this.addToHistory(job);
+          if (job.attempts >= this.maxAttempts) {
+            // Job is dead
+            await Job.findByIdAndUpdate(jobId, {
+              $set: { status: JOB_STATUS.DEAD },
+              $push: { errors: errorEntry }
+            });
 
-      } catch (error) {
-        job.status = JOB_STATUS.FAILED;
-        job.errors.push({
-          attempt: job.attempts,
-          error: error.message,
-          timestamp: new Date()
-        });
+            this.stats.totalFailed++;
 
-        console.error(`[Queue] Job ${job.id.substring(0, 8)} failed:`, error.message);
+            if (job.data.projectId && job.data.commit?.hash) {
+              await autoLogger.logError({
+                projectId: job.data.projectId,
+                commitHash: job.data.commit.hash,
+                commitMessage: job.data.commit.message,
+                author: job.data.commit.author,
+                stage: STAGES.QUEUE,
+                error: new Error(`Job failed after ${job.attempts} attempts: ${error.message}`),
+                pipelineTrace: job.pipelineTrace,
+                deliveryId: job.data.deliveryId
+              });
+            }
 
-        if (job.attempts >= this.maxAttempts) {
-          job.status = JOB_STATUS.DEAD;
-          this.stats.totalFailed++;
-          
-          if (job.data.projectId && job.data.commit?.hash) {
-             await autoLogger.logError({
-               projectId: job.data.projectId,
-               commitHash: job.data.commit.hash,
-               commitMessage: job.data.commit.message,
-               author: job.data.commit.author,
-               stage: STAGES.QUEUE,
-               error: new Error(`Job failed after ${job.attempts} attempts: ${error.message}`),
-               pipelineTrace: job.pipelineTrace,
-               deliveryId: job.data.deliveryId
-             });
+            await this.addToHistory(job);
+          } else {
+            // Schedule retry with exponential backoff
+            const backoffDelay = Math.min(
+              Math.pow(2, job.attempts) * 1000 + Math.random() * 1000,
+              60000
+            );
+            const retryAfter = new Date(Date.now() + backoffDelay);
+
+            await Job.findByIdAndUpdate(jobId, {
+              $set: { 
+                status: JOB_STATUS.PENDING,
+                retryAfter
+              },
+              $push: { errors: errorEntry }
+            });
+
+            console.log(`[Queue] Job ${jobId.substring(0, 8)} will retry after ${retryAfter.toISOString()} (attempt ${job.attempts + 1}/${this.maxAttempts})`);
+
+            // Schedule a process check after the backoff
+            setTimeout(() => this.process(), backoffDelay);
           }
-          
-          userQueue.shift(); // Remove dead job
-          this.addToHistory(job);
-        } else {
-             // Retry with exponential backoff
-             const backoffDelay = Math.min(
-               Math.pow(2, job.attempts) * 1000 + Math.random() * 1000, // 2^attempts seconds + jitter
-               60000 // Cap at 60 seconds
-             );
-             
-             console.log(`[Queue] Job ${job.id.substring(0, 8)} will retry in ${backoffDelay}ms (attempt ${job.attempts + 1}/${this.maxAttempts})`);
-             
-             userQueue.shift();
-             job.status = JOB_STATUS.PENDING;
-             
-             // Schedule retry with backoff
-             setTimeout(() => {
-               userQueue.push(job);
-               // Re-add user to active list if not present
-               if (!this.activeUserIds.includes(currentBucketKey)) {
-                 this.activeUserIds.push(currentBucketKey);
-               }
-               // Trigger processing again
-               this.process();
-             }, backoffDelay);
-         }
+        }
       }
-
-      // If user still has jobs, put them back nicely in the round robin
-      if (userQueue.length > 0) {
-        this.activeUserIds.push(currentBucketKey);
-      } else {
-        this.userQueues.delete(currentBucketKey);
-      }
+    } finally {
+      this.processing = false;
     }
-
-    this.processing = false;
   }
 
   /**
    * Get the current status of the queue
-   * @returns {Object} - Queue status
+   * @returns {Promise<Object>} - Queue status
    */
-  getStatus() {
-    let totalQueued = 0;
-    const allJobs = [];
-    
-    for (const [userId, jobs] of this.userQueues) {
-      totalQueued += jobs.length;
-      allJobs.push(...jobs);
-    }
+  async getStatus() {
+    const [pending, processing, completed, failed] = await Promise.all([
+      Job.countDocuments({ status: JOB_STATUS.PENDING }),
+      Job.countDocuments({ status: JOB_STATUS.PROCESSING }),
+      Job.countDocuments({ status: JOB_STATUS.COMPLETED }),
+      Job.countDocuments({ status: { $in: [JOB_STATUS.FAILED, JOB_STATUS.DEAD] } })
+    ]);
+
+    const jobs = await Job.find({ 
+      status: { $in: [JOB_STATUS.PENDING, JOB_STATUS.PROCESSING] } 
+    })
+    .select('bucketKey status attempts queuedAt startedAt')
+    .sort({ queuedAt: 1 })
+    .limit(50)
+    .lean();
 
     return {
-      queueLength: totalQueued,
+      queueLength: pending + processing,
       processing: this.processing,
-      activeUsers: this.activeUserIds.length,
+      activeUsers: (await Job.distinct('bucketKey', { status: JOB_STATUS.PENDING })).length,
       stats: {
         ...this.stats,
+        pending,
+        processing,
+        completed,
+        failed,
         uptime: Date.now() - this.stats.startTime.getTime()
       },
-      jobs: allJobs.map(j => ({
-        id: j.id,
+      jobs: jobs.map(j => ({
+        id: j._id.toString(),
         bucketKey: j.bucketKey,
         status: j.status,
         attempts: j.attempts,
@@ -365,61 +407,90 @@ class WebhookQueue extends EventEmitter {
   }
 
   /**
-   * Get a specific job by ID (checks queue and history)
+   * Get a specific job by ID
    * @param {string} jobId - Job ID
-   * @returns {Object|null} - Job or null
+   * @returns {Promise<Object|null>} - Job or null
    */
-  getJob(jobId) {
-    // Check active queues first
-    for (const jobs of this.userQueues.values()) {
-      const job = jobs.find(j => j.id === jobId);
-      if (job) return job;
+  async getJob(jobId) {
+    try {
+      const job = await Job.findById(jobId).lean();
+      if (job) {
+        // Return with id property for compatibility
+        return { ...job, id: job._id.toString() };
+      }
+      return null;
+    } catch (e) {
+      return null;
     }
-    
-    // Check history for completed/failed jobs
-    return this.jobHistory.get(jobId) || null;
   }
 
   /**
    * Check if a commit is already in the queue
    * @param {string} commitHash - Commit hash to check
-   * @returns {boolean} - True if commit is already queued
+   * @returns {Promise<boolean>} - True if commit is already queued
    */
-  isCommitQueued(commitHash) {
-    for (const jobs of this.userQueues.values()) {
-      if (jobs.some(j => j.data.commit?.hash === commitHash)) {
-        return true;
-      }
-    }
-    return false;
+  async isCommitQueued(commitHash) {
+    const count = await Job.countDocuments({
+      'data.commit.hash': commitHash,
+      status: { $in: [JOB_STATUS.PENDING, JOB_STATUS.PROCESSING] }
+    });
+    return count > 0;
   }
 
   /**
    * Clear all pending jobs (for maintenance)
-   * @returns {number} - Number of jobs cleared
+   * @returns {Promise<number>} - Number of jobs cleared
    */
-  clear() {
-    let count = 0;
-    for (const jobs of this.userQueues.values()) {
-      count += jobs.length;
-    }
-    this.userQueues.clear();
-    this.activeUserIds = [];
+  async clear() {
+    const result = await Job.deleteMany({ status: JOB_STATUS.PENDING });
     this.processing = false;
-    console.log(`[Queue] Cleared ${count} jobs`);
-    return count;
+    console.log(`[Queue] Cleared ${result.deletedCount} jobs`);
+    return result.deletedCount;
   }
 
   /**
    * Get total queue length
-   * @returns {number} - Number of jobs in queue
+   * @returns {Promise<number>} - Number of jobs in queue
+   */
+  async getLength() {
+    return await Job.countDocuments({ 
+      status: { $in: [JOB_STATUS.PENDING, JOB_STATUS.PROCESSING] } 
+    });
+  }
+
+  /**
+   * Synchronous length getter for compatibility (returns cached or 0)
+   * Use getLength() for accurate count
    */
   get length() {
-    let count = 0;
-    for (const jobs of this.userQueues.values()) {
-      count += jobs.length;
+    // For sync access, return 0 - callers should use getLength() for accuracy
+    console.warn('[Queue] Sync .length access deprecated, use await getLength()');
+    return 0;
+  }
+
+  /**
+   * Recover jobs stuck in 'processing' status after a crash
+   * Should be called on server startup
+   * @returns {Promise<number>} - Number of jobs recovered
+   */
+  async recoverStuckJobs() {
+    const result = await Job.updateMany(
+      { status: JOB_STATUS.PROCESSING },
+      { 
+        $set: { 
+          status: JOB_STATUS.PENDING,
+          retryAfter: null
+        }
+      }
+    );
+    
+    if (result.modifiedCount > 0) {
+      console.log(`[Queue] Recovered ${result.modifiedCount} stuck jobs from previous crash`);
+      // Trigger processing
+      this.process();
     }
-    return count;
+    
+    return result.modifiedCount;
   }
 }
 

@@ -10,6 +10,7 @@ const Report = require('./Report');
 const AutoLog = require('./AutoLog');
 const Invitation = require('./Invitation');
 const User = require('./User');
+const { Job, JOB_STATUS } = require('./Job');
 
 module.exports = {
   Template,
@@ -17,5 +18,7 @@ module.exports = {
   Report,
   AutoLog,
   Invitation,
-  User
+  User,
+  Job,
+  JOB_STATUS
 };

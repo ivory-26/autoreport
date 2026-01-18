@@ -10,30 +10,47 @@
 const Groq = require('groq-sdk');
 const { withTimeout, getTimeoutFromEnv, TimeoutError } = require('./timeout');
 const { WRITER_SYSTEM_PROMPT, createWriterUserPrompt, createSectionIntroPrompt } = require('../prompts/writerPrompt');
+const KeyPoolManager = require('../utils/keyPoolManager');
 
 // Model configuration - primary and fallback models
 const PRIMARY_MODEL = 'qwen/qwen3-32b'; // Qwen3-32B for creative technical writing
 const FALLBACK_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
-// Initialize Groq client
-let groqClient = null;
+// Initialize API key pool manager
+let keyPool = null;
 
 /**
- * Initialize the Groq client
- * @throws {Error} If GROQ_API_KEY is not set
+ * Initialize the key pool
+ * Supports both GROQ_API_KEY (single) and GROQ_API_KEYS (multiple, comma-separated)
+ * @throws {Error} If no API keys are set
  */
-function initializeClient() {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error('GROQ_API_KEY environment variable is not set. Get a free key at https://console.groq.com');
+function initializeKeyPool() {
+  if (keyPool) return keyPool;
+  
+  // Check for multiple keys first, fall back to single key
+  const keysString = process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY;
+  
+  if (!keysString) {
+    throw new Error('GROQ_API_KEY or GROQ_API_KEYS environment variable is not set. Get a free key at https://console.groq.com');
   }
+  
+  keyPool = new KeyPoolManager(keysString, 'Writer');
+  return keyPool;
+}
 
-  if (!groqClient) {
-    groqClient = new Groq({
-      apiKey: process.env.GROQ_API_KEY
-    });
-  }
-
-  return groqClient;
+/**
+ * Get a Groq client with the next available API key
+ * @returns {Object} - { client: Groq, keyInfo: { keyIndex, masked, poolSize } }
+ */
+function getClientWithKey() {
+  const pool = initializeKeyPool();
+  const keyInfo = pool.getNextKey();
+  
+  const client = new Groq({
+    apiKey: keyInfo.key
+  });
+  
+  return { client, keyInfo };
 }
 
 /**
@@ -141,36 +158,48 @@ async function generate({
 
   // Helper function to call the API with a specific model
   async function callWithModel(modelName) {
-    const client = initializeClient();
+    const { client, keyInfo } = getClientWithKey();
+    const pool = initializeKeyPool();
 
-    const userPrompt = createWriterUserPrompt({
-      analysisResult,
-      targetSection,
-      projectMetadata,
-      commitInfo,
-      authorInfo, // Pass into prompt creator
-      repoContext,
-      allSections
-    });
+    try {
+      const userPrompt = createWriterUserPrompt({
+        analysisResult,
+        targetSection,
+        projectMetadata,
+        commitInfo,
+        authorInfo,
+        repoContext,
+        allSections
+      });
 
-    const chatCompletion = await client.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: WRITER_SYSTEM_PROMPT + '\n\nRespond only with valid JSON. No markdown code fences.'
-        },
-        {
-          role: 'user',
-          content: userPrompt
-        }
-      ],
-      model: modelName,
-      temperature: 0.7,
-      max_tokens: 4096,
-      response_format: { type: 'json_object' }
-    });
+      const chatCompletion = await client.chat.completions.create({
+        messages: [
+          {
+            role: 'system',
+            content: WRITER_SYSTEM_PROMPT + '\n\nRespond only with valid JSON. No markdown code fences.'
+          },
+          {
+            role: 'user',
+            content: userPrompt
+          }
+        ],
+        model: modelName,
+        temperature: 0.7,
+        max_tokens: 4096,
+        response_format: { type: 'json_object' }
+      });
 
-    return chatCompletion.choices[0]?.message?.content || '{}';
+      pool.recordSuccess(keyInfo.keyIndex);
+      
+      return {
+        content: chatCompletion.choices[0]?.message?.content || '{}',
+        keyInfo
+      };
+    } catch (error) {
+      const isRateLimit = error?.status === 429 || error?.message?.toLowerCase().includes('rate limit');
+      pool.recordFailure(keyInfo.keyIndex, isRateLimit);
+      throw error;
+    }
   }
 
   // Check if error is a rate limit / token limit error
@@ -196,7 +225,7 @@ async function generate({
     );
 
     // Parse and validate the response
-    const parsed = parseWriterResponse(result);
+    const parsed = parseWriterResponse(result.content);
     const validated = validateWriterResult(parsed, targetSection);
 
     console.log(`[Writer] Generated ${validated.wordCount} words for section "${sectionTitle}" using ${PRIMARY_MODEL}`);
@@ -207,7 +236,9 @@ async function generate({
       metadata: {
         generatedAt: new Date(),
         model: PRIMARY_MODEL,
-        sourceCommit: commitInfo.hash
+        sourceCommit: commitInfo.hash,
+        apiKeyUsed: result.keyInfo.masked,
+        keyPoolSize: result.keyInfo.poolSize
       }
     };
 
@@ -223,7 +254,7 @@ async function generate({
           'Writer Agent (Fallback)'
         );
 
-        const parsed = parseWriterResponse(result);
+        const parsed = parseWriterResponse(result.content);
         const validated = validateWriterResult(parsed, targetSection);
 
         console.log(`[Writer] Generated ${validated.wordCount} words for section "${targetSection.title}" using fallback ${FALLBACK_MODEL}`);
@@ -235,7 +266,9 @@ async function generate({
             generatedAt: new Date(),
             model: FALLBACK_MODEL,
             usedFallback: true,
-            sourceCommit: commitInfo.hash
+            sourceCommit: commitInfo.hash,
+            apiKeyUsed: result.keyInfo.masked,
+            keyPoolSize: result.keyInfo.poolSize
           }
         };
 
@@ -290,26 +323,34 @@ async function generateSectionIntro(section, projectMetadata) {
 
   // Helper function to call the API with a specific model
   async function callWithModel(modelName) {
-    const client = initializeClient();
+    const { client, keyInfo } = getClientWithKey();
+    const pool = initializeKeyPool();
     const prompt = createSectionIntroPrompt(section, projectMetadata);
 
-    const chatCompletion = await client.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a technical writer. Generate a brief, professional introduction paragraph.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      model: modelName,
-      temperature: 0.6,
-      max_tokens: 500
-    });
+    try {
+      const chatCompletion = await client.chat.completions.create({
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a technical writer. Generate a brief, professional introduction paragraph.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        model: modelName,
+        temperature: 0.6,
+        max_tokens: 500
+      });
 
-    return chatCompletion.choices[0]?.message?.content || '';
+      pool.recordSuccess(keyInfo.keyIndex);
+      return chatCompletion.choices[0]?.message?.content || '';
+    } catch (error) {
+      const isRateLimit = error?.status === 429 || error?.message?.toLowerCase().includes('rate limit');
+      pool.recordFailure(keyInfo.keyIndex, isRateLimit);
+      throw error;
+    }
   }
 
   // Check if error is a rate limit / token limit error

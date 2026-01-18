@@ -9,7 +9,6 @@
 
 const Project = require('../models/Project');
 const { webhookQueue } = require('./queue');
-const axios = require('axios');
 
 /**
  * Calculate exponential backoff delay
@@ -144,23 +143,24 @@ async function fetchMissedWebhooksForProject(project) {
     const [owner, repo] = project.repoFullName.split('/');
     
     // Fetch recent commits from GitHub (last 10 commits)
-    const response = await axios.get(
-      `https://api.github.com/repos/${owner}/${repo}/commits`,
-      {
-        headers: {
-          'Authorization': `token ${project.githubToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'AutoReport-App'
-        },
-        params: {
-          per_page: 10,
-          sha: project.defaultBranch || 'main'
-        },
-        timeout: 10000
-      }
-    );
+    const commitsUrl = new URL(`https://api.github.com/repos/${owner}/${repo}/commits`);
+    commitsUrl.searchParams.append('per_page', '10');
+    commitsUrl.searchParams.append('sha', project.defaultBranch || 'main');
 
-    const commits = response.data;
+    const response = await fetch(commitsUrl, {
+      headers: {
+        'Authorization': `token ${project.githubToken}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'AutoReport-App'
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+    }
+
+    const commits = await response.json();
     const Report = require('../models/Report');
 
     // Get existing report to check which commits were processed
@@ -190,7 +190,7 @@ async function fetchMissedWebhooksForProject(project) {
       }
 
       // Skip if already in queue
-      if (webhookQueue.isCommitQueued(commit.sha)) {
+      if (await webhookQueue.isCommitQueued(commit.sha)) {
         continue;
       }
 
@@ -203,7 +203,7 @@ async function fetchMissedWebhooksForProject(project) {
 
       // Fetch full commit details with diff
       try {
-        const commitDetailResponse = await axios.get(
+        const commitDetailResponse = await fetch(
           `https://api.github.com/repos/${owner}/${repo}/commits/${commit.sha}`,
           {
             headers: {
@@ -211,9 +211,15 @@ async function fetchMissedWebhooksForProject(project) {
               'Accept': 'application/vnd.github.v3.diff',
               'User-Agent': 'AutoReport-App'
             },
-            timeout: 15000
+            signal: AbortSignal.timeout(15000)
           }
         );
+
+        if (!commitDetailResponse.ok) {
+          throw new Error(`GitHub API error: ${commitDetailResponse.status}`);
+        }
+
+        const diffData = await commitDetailResponse.text();
 
         // Simulate a webhook payload
         const syntheticPayload = {
@@ -233,7 +239,7 @@ async function fetchMissedWebhooksForProject(project) {
             authorEmail: commit.commit.author.email,
             timestamp: commit.commit.author.date
           },
-          diff: commitDetailResponse.data,
+          diff: diffData,
           files: commit.files || [],
           summary: {
             filesChanged: commit.files?.length || 0,
@@ -248,8 +254,8 @@ async function fetchMissedWebhooksForProject(project) {
         };
 
         // Enqueue the synthetic webhook
-        webhookQueue.enqueue(syntheticPayload);
-        recovered++;
+        await webhookQueue.enqueue(syntheticPayload);
+        recovered++;;
 
         // Rate limit: wait 1 second between API calls
         await sleep(1000);
@@ -266,9 +272,9 @@ async function fetchMissedWebhooksForProject(project) {
     return recovered;
 
   } catch (error) {
-    if (error.response?.status === 404) {
+    if (error.message?.includes('404')) {
       console.warn(`[Resilience] Repository not found or no access: ${project.repoFullName}`);
-    } else if (error.response?.status === 403) {
+    } else if (error.message?.includes('403')) {
       console.warn(`[Resilience] Rate limited or forbidden for: ${project.repoFullName}`);
     } else {
       throw error;
@@ -285,7 +291,7 @@ async function checkWebhookHealth() {
   return {
     status: 'healthy',
     queue: {
-      length: webhookQueue.length,
+      length: await webhookQueue.getLength(),
       processing: webhookQueue.processing
     },
     timestamp: new Date()

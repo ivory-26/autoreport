@@ -502,7 +502,7 @@ async function generateInitialReport(req, res) {
     const hasExistingContent = report.sections.some(s => s.content && s.content.trim().length > 0);
 
     // Enqueue the job and return 202 Accepted immediately
-    const jobId = webhookQueue.enqueue({
+    const jobId = await webhookQueue.enqueue({
       type: 'initial_report',
       userId: project.owner, // For Fair Queueing
       projectId: project._id.toString(),
@@ -559,7 +559,7 @@ async function processInitialReportJob(job) {
     console.log(`[InitialReportJob] Processing job ${job.id.substring(0, 8)}`);
 
     // Send initial progress
-  webhookQueue.sendProgress(job.id, {
+    await webhookQueue.sendProgress(job.id, {
     stage: 'starting',
     message: 'Loading project and report data'
   });
@@ -573,7 +573,7 @@ async function processInitialReportJob(job) {
     throw new Error('Project, template, or report not found');
   }
 
-  webhookQueue.sendProgress(job.id, {
+  await webhookQueue.sendProgress(job.id, {
     stage: 'analyzing',
     message: hasExistingContent ? 'Using commit-based update' : 'Starting repository analysis'
   });
@@ -591,8 +591,8 @@ async function processInitialReportJob(job) {
         name: project.name,
         description: project.description || ''
       },
-      onProgress: (progress) => {
-        webhookQueue.sendProgress(job.id, progress);
+      onProgress: async (progress) => {
+        await webhookQueue.sendProgress(job.id, progress);
       }
     });
 
@@ -600,7 +600,7 @@ async function processInitialReportJob(job) {
       throw new Error('Repository analysis failed');
     }
 
-    webhookQueue.sendProgress(job.id, {
+    await webhookQueue.sendProgress(job.id, {
       stage: 'saving',
       message: 'Saving generated content to report'
     });
@@ -658,7 +658,7 @@ async function processInitialReportJob(job) {
       }
     });
 
-    webhookQueue.sendProgress(job.id, {
+    await webhookQueue.sendProgress(job.id, {
       stage: 'complete',
       message: `Initial report generated: ${successCount} sections populated`,
       result: {
@@ -678,7 +678,7 @@ async function processInitialReportJob(job) {
   // Existing content found - use commit-based incremental update
   console.log('[InitialReportJob] Report has content - using commit-based update');
   
-  webhookQueue.sendProgress(job.id, {
+  await webhookQueue.sendProgress(job.id, {
     stage: 'fetching',
     message: 'Fetching latest commit from GitHub'
   });
@@ -707,7 +707,7 @@ async function processInitialReportJob(job) {
   const lastCommit = commits[0];
   console.log(`[InitialReportJob] Last commit: ${lastCommit.sha.substring(0, 7)} - ${lastCommit.commit.message}`);
 
-  webhookQueue.sendProgress(job.id, {
+  await webhookQueue.sendProgress(job.id, {
     stage: 'fetching',
     message: `Fetching diff for commit ${lastCommit.sha.substring(0, 7)}`
   });
@@ -754,7 +754,7 @@ async function processInitialReportJob(job) {
 
   console.log(`[InitialReportJob] Files changed: ${filesChanged.length}`);
 
-  webhookQueue.sendProgress(job.id, {
+  await webhookQueue.sendProgress(job.id, {
     stage: 'analyzing',
     message: 'Analyzing commit changes'
   });
@@ -771,8 +771,8 @@ async function processInitialReportJob(job) {
       techStack: project.settings?.techStack || []
     },
     templateSections: template.sections,
-    onProgress: (progress) => {
-      webhookQueue.sendProgress(job.id, progress);
+    onProgress: async (progress) => {
+      await webhookQueue.sendProgress(job.id, progress);
     }
   });
 
@@ -786,7 +786,7 @@ async function processInitialReportJob(job) {
     throw new Error('Analysis failed: ' + (analysisResult.error || 'Unknown error'));
   }
 
-  webhookQueue.sendProgress(job.id, {
+  await webhookQueue.sendProgress(job.id, {
     stage: 'writing',
     message: 'Generating content for sections'
   });
@@ -813,7 +813,7 @@ async function processInitialReportJob(job) {
     contentLength: r.content?.length || 0
   })));
 
-  webhookQueue.sendProgress(job.id, {
+  await webhookQueue.sendProgress(job.id, {
     stage: 'saving',
     message: 'Saving generated content'
   });
@@ -877,7 +877,7 @@ async function processInitialReportJob(job) {
     });
   }
 
-  webhookQueue.sendProgress(job.id, {
+  await webhookQueue.sendProgress(job.id, {
     stage: 'complete',
     message: `Report updated: ${successfulUpdates.length} sections modified`,
     result: {

@@ -11,6 +11,7 @@ const Groq = require('groq-sdk');
 const { withTimeout, getTimeoutFromEnv, TimeoutError } = require('./timeout');
 const { ANALYZER_SYSTEM_PROMPT, createAnalyzerUserPrompt, createChunkedAnalyzerPrompt } = require('../prompts/analyzerPrompt');
 const { chunkDiff, mergeChunkAnalyses, DEFAULT_CHUNK_SIZE } = require('./chunkingService');
+const KeyPoolManager = require('../utils/keyPoolManager');
 
 // Model configuration - primary and fallback models
 const PRIMARY_MODEL = 'openai/gpt-oss-120b';
@@ -20,25 +21,41 @@ const FALLBACK_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 const MAX_DIFF_TOKENS = 4000; // ~16000 chars assuming 4 chars per token
 const CHUNKING_THRESHOLD = DEFAULT_CHUNK_SIZE; // Use chunking for diffs larger than this
 
-// Initialize Groq client
-let groqClient = null;
+// Initialize API key pool manager
+let keyPool = null;
 
 /**
- * Initialize the Groq client
- * @throws {Error} If GROQ_API_KEY is not set
+ * Initialize the key pool
+ * Supports both GROQ_API_KEY (single) and GROQ_API_KEYS (multiple, comma-separated)
+ * @throws {Error} If no API keys are set
  */
-function initializeClient() {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error('GROQ_API_KEY environment variable is not set. Get a free key at https://console.groq.com');
+function initializeKeyPool() {
+  if (keyPool) return keyPool;
+  
+  // Check for multiple keys first, fall back to single key
+  const keysString = process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY;
+  
+  if (!keysString) {
+    throw new Error('GROQ_API_KEY or GROQ_API_KEYS environment variable is not set. Get a free key at https://console.groq.com');
   }
+  
+  keyPool = new KeyPoolManager(keysString, 'Analyzer');
+  return keyPool;
+}
 
-  if (!groqClient) {
-    groqClient = new Groq({
-      apiKey: process.env.GROQ_API_KEY
-    });
-  }
-
-  return groqClient;
+/**
+ * Get a Groq client with the next available API key
+ * @returns {Object} - { client: Groq, keyInfo: { keyIndex, masked, poolSize } }
+ */
+function getClientWithKey() {
+  const pool = initializeKeyPool();
+  const keyInfo = pool.getNextKey();
+  
+  const client = new Groq({
+    apiKey: keyInfo.key
+  });
+  
+  return { client, keyInfo };
 }
 
 /**
@@ -169,36 +186,50 @@ async function analyze({
 
   // Helper function to call the API with a specific model
   async function callWithModel(modelName, diffContent) {
-    const client = initializeClient();
+    const { client, keyInfo } = getClientWithKey();
+    const pool = initializeKeyPool();
 
-    const userPrompt = createAnalyzerUserPrompt({
-      commitHash,
-      commitMessage,
-      author,
-      diff: diffContent,
-      filesChanged,
-      projectContext,
-      templateSections
-    });
+    try {
+      const userPrompt = createAnalyzerUserPrompt({
+        commitHash,
+        commitMessage,
+        author,
+        diff: diffContent,
+        filesChanged,
+        projectContext,
+        templateSections
+      });
 
-    const chatCompletion = await client.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: ANALYZER_SYSTEM_PROMPT + '\n\nRespond only with valid JSON. No markdown code fences.'
-        },
-        {
-          role: 'user',
-          content: userPrompt
-        }
-      ],
-      model: modelName,
-      temperature: 0.3,
-      max_tokens: 2048,
-      response_format: { type: 'json_object' }
-    });
+      const chatCompletion = await client.chat.completions.create({
+        messages: [
+          {
+            role: 'system',
+            content: ANALYZER_SYSTEM_PROMPT + '\n\nRespond only with valid JSON. No markdown code fences.'
+          },
+          {
+            role: 'user',
+            content: userPrompt
+          }
+        ],
+        model: modelName,
+        temperature: 0.3,
+        max_tokens: 2048,
+        response_format: { type: 'json_object' }
+      });
 
-    return chatCompletion.choices[0]?.message?.content || '{}';
+      // Record success
+      pool.recordSuccess(keyInfo.keyIndex);
+      
+      return {
+        content: chatCompletion.choices[0]?.message?.content || '{}',
+        keyInfo
+      };
+    } catch (error) {
+      // Check if it's a rate limit error
+      const isRateLimit = error?.status === 429 || error?.message?.toLowerCase().includes('rate limit');
+      pool.recordFailure(keyInfo.keyIndex, isRateLimit);
+      throw error;
+    }
   }
 
   // Check if error is a rate limit / token limit error
@@ -226,7 +257,7 @@ async function analyze({
     );
 
     // Parse and validate the response
-    const parsed = parseAIResponse(result);
+    const parsed = parseAIResponse(result.content);
     const validated = validateAnalysisResult(parsed);
 
     console.log(`[Analyzer] Analyzed commit ${commitHash?.substring(0, 7)}: ${validated.changeType} (${validated.impactLevel}) using ${PRIMARY_MODEL}`);
@@ -237,7 +268,9 @@ async function analyze({
       metadata: {
         analyzedAt: new Date(),
         model: PRIMARY_MODEL,
-        commitHash
+        commitHash,
+        apiKeyUsed: result.keyInfo.masked,
+        keyPoolSize: result.keyInfo.poolSize
       }
     };
 
@@ -254,7 +287,7 @@ async function analyze({
           'Analyzer Agent (Fallback)'
         );
 
-        const parsed = parseAIResponse(result);
+        const parsed = parseAIResponse(result.content);
         const validated = validateAnalysisResult(parsed);
 
         console.log(`[Analyzer] Analyzed commit ${commitHash?.substring(0, 7)}: ${validated.changeType} (${validated.impactLevel}) using fallback ${FALLBACK_MODEL}`);
@@ -266,7 +299,9 @@ async function analyze({
             analyzedAt: new Date(),
             model: FALLBACK_MODEL,
             usedFallback: true,
-            commitHash
+            commitHash,
+            apiKeyUsed: result.keyInfo.masked,
+            keyPoolSize: result.keyInfo.poolSize
           }
         };
 
@@ -329,7 +364,6 @@ async function analyzeChunked({
   onProgress
 }) {
   const timeoutMs = getTimeoutFromEnv(45000); // Longer timeout for chunks
-  const client = initializeClient();
 
   // Chunk the diff
   const chunks = chunkDiff(diff);
@@ -367,23 +401,37 @@ async function analyzeChunked({
         templateSections
       });
 
+      const { client, keyInfo } = getClientWithKey();
+      const pool = initializeKeyPool();
+
       const chatCompletion = await withTimeout(
-        client.chat.completions.create({
-          messages: [
-            {
-              role: 'system',
-              content: ANALYZER_SYSTEM_PROMPT + '\n\nThis is a CHUNKED analysis. Focus on the content provided in this chunk. Respond only with valid JSON. No markdown code fences.'
-            },
-            {
-              role: 'user',
-              content: userPrompt
-            }
-          ],
-          model: PRIMARY_MODEL,
-          temperature: 0.3,
-          max_tokens: 2048,
-          response_format: { type: 'json_object' }
-        }),
+        (async () => {
+          try {
+            const completion = await client.chat.completions.create({
+              messages: [
+                {
+                  role: 'system',
+                  content: ANALYZER_SYSTEM_PROMPT + '\n\nThis is a CHUNKED analysis. Focus on the content provided in this chunk. Respond only with valid JSON. No markdown code fences.'
+                },
+                {
+                  role: 'user',
+                  content: userPrompt
+                }
+              ],
+              model: PRIMARY_MODEL,
+              temperature: 0.3,
+              max_tokens: 2048,
+              response_format: { type: 'json_object' }
+            });
+            
+            pool.recordSuccess(keyInfo.keyIndex);
+            return completion;
+          } catch (error) {
+            const isRateLimit = error?.status === 429 || error?.message?.toLowerCase().includes('rate limit');
+            pool.recordFailure(keyInfo.keyIndex, isRateLimit);
+            throw error;
+          }
+        })(),
         timeoutMs,
         `Analyzer Agent (Chunk ${i + 1})`
       );
