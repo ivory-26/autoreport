@@ -18,9 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { 
-  UserPlus, 
-  Loader2, 
+import {
+  UserPlus,
+  Loader2,
   CheckCircle2,
   AlertCircle,
   Send
@@ -102,14 +102,18 @@ export function InviteTeamDialog({ projectId, projectName, trigger }) {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        {trigger || (
+      {trigger ? (
+        <DialogTrigger asChild>
+          {trigger}
+        </DialogTrigger>
+      ) : (
+        <DialogTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
             <UserPlus className="h-4 w-4" />
             Invite Team
           </Button>
-        )}
-      </DialogTrigger>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -117,7 +121,7 @@ export function InviteTeamDialog({ projectId, projectName, trigger }) {
             Invite Team Member
           </DialogTitle>
           <DialogDescription>
-            Invite a collaborator to &quot;{projectName}&quot;. They&apos;ll receive an invitation 
+            Invite a collaborator to &quot;{projectName}&quot;. They&apos;ll receive an invitation
             they can accept or decline.
           </DialogDescription>
         </DialogHeader>
@@ -173,11 +177,10 @@ export function InviteTeamDialog({ projectId, projectName, trigger }) {
           {/* Result message */}
           {result && (
             <div
-              className={`flex items-center gap-2 p-3 rounded-lg text-sm ${
-                result.success
+              className={`flex items-center gap-2 p-3 rounded-lg text-sm ${result.success
                   ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-300'
                   : 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300'
-              }`}
+                }`}
             >
               {result.success ? (
                 <CheckCircle2 className="h-4 w-4 flex-shrink-0" />

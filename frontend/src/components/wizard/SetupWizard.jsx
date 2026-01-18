@@ -40,7 +40,8 @@ import {
   ExternalLink,
   UserPlus,
   X,
-  Send
+  Send,
+  List
 } from 'lucide-react';
 import { InviteCollaboratorForm } from '@/components/InviteCollaboratorForm';
 
