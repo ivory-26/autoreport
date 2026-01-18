@@ -215,8 +215,6 @@ export function useProjectWizard() {
     }
   }, []);
 
-  const [generationProgress, setGenerationProgress] = useState(null);
-
   /**
    * Poll job progress until completion
    */
@@ -233,18 +231,6 @@ export function useProjectWizard() {
         
         if (!job) return false;
         
-        // Update progress state
-        const lastProgress = job.progress && job.progress.length > 0 
-          ? job.progress[job.progress.length - 1] 
-          : { stage: 'queued', message: 'Waiting in queue...' };
-          
-        setGenerationProgress({
-          status: job.status,
-          stage: lastProgress.stage,
-          message: lastProgress.message,
-          percent: lastProgress.percent || 0
-        });
-
         if (job.status === 'completed' || job.status === 'failed' || job.status === 'dead') {
           return true; // Stop polling
         }
@@ -257,7 +243,6 @@ export function useProjectWizard() {
         const isComplete = await poll();
         if (isComplete) {
           clearInterval(intervalId);
-          // Notify user via browser alert - REMOVED to use native Notification API in UI
           
           // Fetch final report data
           await fetchLatestReport(projectId);
@@ -290,7 +275,6 @@ export function useProjectWizard() {
     try {
       setIsLoading(true);
       setError(null);
-      setGenerationProgress({ status: 'starting', message: 'Creating project...' });
 
       const [repoOwner, repoName] = selectedRepo.fullName.split('/');
 
@@ -343,7 +327,6 @@ export function useProjectWizard() {
         pollJobProgress(genResult.jobId, projectId);
       } else {
         console.warn('[Wizard] Initial report generation failed to start:', genResult.error);
-        setGenerationProgress({ status: 'failed', message: 'Failed to start generation' });
       }
 
       // Add generation status to created project
@@ -401,7 +384,6 @@ export function useProjectWizard() {
     prevStep,
     createProject,
     fetchLatestReport,
-    setError,
-    generationProgress
+    setError
   };
 }

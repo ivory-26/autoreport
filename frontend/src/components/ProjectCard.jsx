@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { formatRelativeTime, formatAbsoluteDateTime } from '@/lib/time';
 import { motion } from 'framer-motion';
@@ -33,15 +33,46 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [relativeTime, setRelativeTime] = useState(formatRelativeTime(project.report?.updatedAt));
+  const [isGenerating, setIsGenerating] = useState(project.isGeneratingInitialReport || false);
+  const [reportData, setReportData] = useState(project.report);
+
+  // Poll for report status when generating
+  const checkReportStatus = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/projects/${project._id}/status`);
+      if (response.ok) {
+        const data = await response.json();
+        if (!data.isGeneratingInitialReport && data.report) {
+          // Report is ready! Update state and refresh the page
+          setIsGenerating(false);
+          setReportData(data.report);
+          router.refresh();
+        }
+      }
+    } catch (error) {
+      console.error('Error checking report status:', error);
+    }
+  }, [project._id, router]);
+
+  // Polling effect for report generation status
+  useEffect(() => {
+    if (!isGenerating) return;
+
+    // Check immediately, then poll every 10 seconds
+    checkReportStatus();
+    const interval = setInterval(checkReportStatus, 10000);
+
+    return () => clearInterval(interval);
+  }, [isGenerating, checkReportStatus]);
 
   // Update relative time every minute
   useEffect(() => {
     const interval = setInterval(() => {
-      setRelativeTime(formatRelativeTime(project.report?.updatedAt));
+      setRelativeTime(formatRelativeTime(reportData?.updatedAt));
     }, 60000); // Update every minute
 
     return () => clearInterval(interval);
-  }, [project.report?.updatedAt]);
+  }, [reportData?.updatedAt]);
 
   const handleDelete = async () => {
     try {
@@ -96,9 +127,9 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
               </CardDescription>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {project.report && (
+              {reportData && (
                 <Badge variant={statusColor} className="capitalize shadow-sm">
-                  {project.report.status}
+                  {reportData.status}
                 </Badge>
               )}
 
@@ -112,9 +143,9 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
-                    {project.report ? (
+                    {reportData ? (
                       <DropdownMenuItem asChild>
-                        <Link href={`/project/${project.report._id}`} className="cursor-pointer">
+                        <Link href={`/project/${reportData._id}`} className="cursor-pointer">
                           <FileText className="mr-2 h-4 w-4" />
                           View Report
                         </Link>
@@ -182,7 +213,7 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
         </CardHeader>
 
         <CardContent className="flex flex-1 flex-col gap-4">
-          {project.report ? (
+          {reportData ? (
             <div className="flex-1 space-y-3 rounded-2xl bg-secondary/30 p-4 border border-secondary/50">
               <div className="flex items-center justify-between text-sm">
                 <span className="flex items-center gap-2 font-medium text-foreground/80">
@@ -196,37 +227,47 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
                   <span className="opacity-70">Last Updated</span>
                   <span
                     className="font-medium text-foreground cursor-help"
-                    title={formatAbsoluteDateTime(project.report?.updatedAt)}
+                    title={formatAbsoluteDateTime(reportData?.updatedAt)}
                   >
                     {relativeTime}
                   </span>
                 </div>
-                {project.report.metadata?.totalWordCount > 0 && (
+                {reportData.metadata?.totalWordCount > 0 && (
                   <div className="flex flex-col gap-0.5">
                     <span className="opacity-70">Word Count</span>
-                    <span className="font-medium text-foreground">{project.report.metadata.totalWordCount.toLocaleString()}</span>
+                    <span className="font-medium text-foreground">{reportData.metadata.totalWordCount.toLocaleString()}</span>
                   </div>
                 )}
               </div>
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-4 text-center rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
-              <p className="text-xs text-muted-foreground mb-2">No report active</p>
-              <Badge variant="outline" className="text-[10px] h-5">Draft Mode</Badge>
+              {isGenerating ? (
+                <>
+                  <Loader2 className="h-6 w-6 animate-spin text-blue-500 mb-2" />
+                  <p className="text-xs text-muted-foreground mb-2">Generating initial report...</p>
+                  <Badge variant="outline" className="text-[10px] h-5">Please wait</Badge>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground mb-2">No report active</p>
+                  <Badge variant="outline" className="text-[10px] h-5">Draft Mode</Badge>
+                </>
+              )}
             </div>
           )}
 
           <div className="flex items-center gap-2 mt-auto pt-2">
-            {project.isGeneratingInitialReport ? (
+            {isGenerating ? (
               <Button asChild className="flex-1 h-10 rounded-xl shadow-md opacity-70 pointer-events-none" size="sm" disabled>
                 <Link href="#" aria-disabled="true" tabIndex={-1}>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Generating...
                 </Link>
               </Button>
-            ) : project.report ? (
+            ) : reportData ? (
               <Button asChild className="flex-1 h-10 rounded-xl shadow-md transition-all hover:shadow-lg active:scale-95" size="sm">
-                <Link href={`/project/${project.report._id}`}>
+                <Link href={`/project/${reportData._id}`}>
                   View Report <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>

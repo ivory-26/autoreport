@@ -375,7 +375,7 @@ function ReviewStep({
 /**
  * Success step with inline collaborator invitations
  */
-function SuccessStep({ createdProject, onClose, generationProgress }) {
+function SuccessStep({ createdProject, onClose }) {
   const router = useRouter();
 
   useEffect(() => {
@@ -413,8 +413,6 @@ function SuccessStep({ createdProject, onClose, generationProgress }) {
     onClose();
   };
 
-  const progress = generationProgress?.percent || 0;
-
   return (
     <div className="space-y-6 py-4 animate-in fade-in zoom-in-95 duration-500">
       <div className="text-center space-y-2">
@@ -435,33 +433,10 @@ function SuccessStep({ createdProject, onClose, generationProgress }) {
 
       {/* Initial Report Generation Status */}
       {createdProject?.generatingInitialReport && (
-        <Card className="border-blue-100 dark:border-blue-900 bg-blue-50/30 dark:bg-blue-900/10 overflow-hidden relative">
-          <div className="absolute top-0 left-0 h-1 bg-blue-500 transition-all duration-500" style={{ width: `${progress}%` }} />
-          <CardContent className="p-5">
-            <div className="flex items-start gap-4">
-              <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
-                <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400" />
-              </div>
-              <div className="text-left space-y-2 flex-1">
-                <div className="flex justify-between items-center">
-                  <p className="font-bold text-sm text-blue-700 dark:text-blue-400">
-                    Generating Initial Report
-                  </p>
-                  <span className="text-xs font-mono text-blue-600 font-bold">{Math.round(progress)}%</span>
-                </div>
-                <p className="text-muted-foreground text-[11px] leading-relaxed">
-                  We are analyzing your repository and generating the first set of documentation. This usually takes 1-2 minutes.
-                </p>
-                <div className="w-full bg-blue-100 dark:bg-blue-900/50 h-2 rounded-full mt-2 overflow-hidden">
-                  <div
-                    className="bg-blue-600 h-full transition-all duration-500"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex items-center justify-center gap-2 text-muted-foreground py-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <p className="text-sm">Analyzing repository... we&apos;ll send a <strong>GitHub issue</strong> when the report is ready.</p>
+        </div>
       )}
 
       {/* Report Generated Successfully */}
@@ -612,7 +587,6 @@ export function SetupWizard({ trigger }) {
               <SuccessStep
                 createdProject={wizard.createdProject}
                 onClose={wizard.closeWizard}
-                generationProgress={wizard.generationProgress}
               />
             )}
           </div>

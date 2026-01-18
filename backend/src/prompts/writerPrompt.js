@@ -63,14 +63,21 @@ Transform technical changes into scholarly descriptions:
 - GOOD: "The authentication subsystem incorporates a dedicated handler function that manages the complete user login lifecycle, including session initialization and credential verification."
 
 ## Output Format:
-You MUST respond with valid JSON only. No markdown code fences.
+You MUST respond with valid JSON ONLY.
+- The "content" field MUST be a SINGLE STRING.
+- Do NOT use nested objects or arrays inside the "content" field.
+- Use ONLY Markdown syntax (bullets, bold, tables) within the content string.
+- No markdown code fences around the JSON itself.
 
+### JSON Schema:
 {
-  "content": "The generated academic content for the section",
+  "content": "A single long string containing all markdown-formatted content for this section.",
   "insertPosition": "append",
-  "highlights": ["Key technical contribution 1", "Key contribution 2"],
-  "suggestedFollowUp": "Optional: related topic that could be expanded"
+  "highlights": ["Key contribution 1", "Key contribution 2"],
+  "suggestedFollowUp": "Optional related topic string"
 }
+
+**CRITICAL**: If you generate an object for the "content" value instead of a string, the system will crash. Use only strings for "content".
 
 ## Writing Style Guidelines:
 
@@ -435,8 +442,9 @@ ${f.content ? f.content.substring(0, 1500) + '...' : 'Content not available'}
 7. If this is "Introduction", use bullets to summarize key project aspects.
 8. Use PASSIVE VOICE and THIRD PERSON.
 9. NO placeholders, NO commit hashes, NO author names.
+10. **JSON CONTENT RULE**: The "content" field in your JSON MUST be a single string, NOT an object.
 
-Generate the JSON response now.`;
+Generate the JSON response now. (Ensure "content" is a string)`;
   }
 
   // STANDARD UPDATE MODE (Commit Analysis)
@@ -500,8 +508,9 @@ ${historyContext}
 7. NO commit hashes, NO author names, NO timestamps
 8. Focus on WHAT the functionality does and WHY it matters
 9. **ADOPT THE ROLE STRATEGY**: ${role === 'owner' || role === 'admin' ? 'Use authoritative language defining system boundaries.' : 'Use descriptive language detailing implementation specifics.'}
+10. **JSON CONTENT RULE**: The "content" field in your JSON MUST be a single string, NOT an object.
 
-Generate the JSON response now.`;
+Generate the JSON response now. (Ensure "content" is a string)`;
 }
 
 /**

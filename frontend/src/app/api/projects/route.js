@@ -32,6 +32,7 @@ export async function GET() {
         return {
           ...project,
           _id: project._id.toString(),
+          isGeneratingInitialReport: project.isGeneratingInitialReport || false,
           report: report ? {
             ...report,
             _id: report._id.toString(),

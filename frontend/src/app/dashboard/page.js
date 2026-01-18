@@ -56,6 +56,7 @@ async function enrichProjectsWithReports(projects, isShared = false) {
         owner: project.owner?.toString(),
         createdAt: project.createdAt?.toISOString(),
         updatedAt: project.updatedAt?.toISOString(),
+        isGeneratingInitialReport: project.isGeneratingInitialReport || false,
         collaborators: project.collaborators?.map(c => ({
           ...c,
           userId: c.userId?.toString(),
