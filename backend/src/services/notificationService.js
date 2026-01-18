@@ -14,6 +14,24 @@ async function notifyUserOnGitHub(owner, repo, accessToken, project, reportId) {
     const reportUrl = `${frontendUrl}/project/${reportId}`;
     
     const issueTitle = `AutoReport: Initial Setup Complete - ${project.name}`;
+    
+    let webhookSection = '';
+    if (project.webhookEnabled) {
+      webhookSection = `
+### 🚀 Auto-Updates Enabled
+Every time you push code to this repository, AutoReport will analyze the changes and update the documentation automatically.
+`;
+    } else {
+      const settingsUrl = `${frontendUrl}/project/${reportId}?tab=settings`;
+      webhookSection = `
+### ⚠️ Action Required: Enable Auto-Updates
+Your project is currently in **one-time report mode**. To enable automatic updates on every push:
+1. Go to the [**Project Settings**](${settingsUrl}).
+2. Follow the instructions to add a webhook to your repository.
+${project.isRepoPublic ? '> **Note:** For security reasons, webhook configuration details are only visible in the AutoReport dashboard.' : ''}
+`;
+    }
+
     const issueBody = `
 ## 🎉 Project Setup Complete!
 
@@ -25,10 +43,10 @@ Your project **${project.name}** has been successfully configured with AutoRepor
 We have analyzed your repository and generated the initial documentation based on your chosen template.
 You can view the full report here: [**View Report**](${reportUrl})
 
-### 🚀 Next Steps
-1. **Review and Verify**: Check the generated report for accuracy.
-2. **Auto-Updates**: Every time you push code to this repository, AutoReport will analyze the changes and update the documentation automatically.
-3. **Collaborate**: Invite team members to view or edit the report.
+${webhookSection}
+
+### 🤝 Collaborate
+Invite team members to view or edit the report via the Team tab in the dashboard.
 
 > This issue was automatically created by AutoReport to notify you of the setup completion.
     `;

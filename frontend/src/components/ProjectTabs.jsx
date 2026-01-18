@@ -18,7 +18,8 @@ import {
   ReportsPageTabsTrigger,
   ReportsPageTabsContent,
 } from '@/components/ui/reports-page-tabs';
-import { FileText, History, Users, BarChart3 } from 'lucide-react';
+import { FileText, History, Users, BarChart3, Settings } from 'lucide-react';
+import { ProjectSettings } from '@/components/ProjectSettings';
 
 export function ProjectTabs({ report, project, logs, isOwner }) {
   return (
@@ -40,6 +41,12 @@ export function ProjectTabs({ report, project, logs, isOwner }) {
           <History className="h-4 w-4" />
           Activity
         </ReportsPageTabsTrigger>
+        {isOwner && (
+          <ReportsPageTabsTrigger value="settings">
+            <Settings className="h-4 w-4" />
+            Settings
+          </ReportsPageTabsTrigger>
+        )}
       </ReportsPageTabsList>
 
       {/* Report Tab */}
@@ -113,6 +120,13 @@ export function ProjectTabs({ report, project, logs, isOwner }) {
           </CardContent>
         </Card>
       </ReportsPageTabsContent>
+
+      {/* Settings Tab */}
+      {isOwner && (
+        <ReportsPageTabsContent value="settings" className="mt-6">
+          <ProjectSettings project={project} />
+        </ReportsPageTabsContent>
+      )}
     </ReportsPageTabs>
   );
 }

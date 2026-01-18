@@ -311,14 +311,32 @@ function ReviewStep({
         </Card>
       </div>
 
+      {selectedRepo && !selectedRepo.permissions?.admin && (
+        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium text-amber-800 font-semibold flex items-center gap-1.5">
+                Admin Permissions Required
+              </p>
+              <p className="text-amber-700 mt-1">
+                You are a collaborator but not an admin of this repository.
+                AutoReport can generate an initial report, but you'll need the repository owner to set up a webhook for automatic updates.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="p-3 rounded-lg bg-muted/50 border">
         <div className="flex items-start gap-2">
           <Sparkles className="h-4 w-4 text-primary mt-0.5" />
           <div className="text-sm">
             <p className="font-medium">What happens next?</p>
             <p className="text-muted-foreground mt-1">
-              We&apos;ll create your project and set up a GitHub webhook. Every time you push code,
-              AutoReport will automatically analyze your changes and update your documentation.
+              {selectedRepo?.permissions?.admin
+                ? "We'll create your project and set up a GitHub webhook automatically. Every time you push code, AutoReport will analyze and update your documentation."
+                : "We'll create your project and generate an initial report. To enable automatic updates on every push, a webhook will need to be configured manually."}
             </p>
           </div>
         </div>
@@ -425,35 +443,6 @@ function SuccessStep({ createdProject, onClose, generationProgress }) {
                 <p className="text-muted-foreground text-xs mt-0.5">
                   Your first report has been created and is ready to view.
                 </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {createdProject?.webhook && (
-        <Card className={createdProject.webhook.success ? 'border-green-200' : 'border-yellow-200'}>
-          <CardContent className="p-3">
-            <div className="flex items-start gap-2">
-              {createdProject.webhook.success ? (
-                <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
-              ) : (
-                <AlertCircle className="h-4 w-4 text-yellow-600 mt-0.5" />
-              )}
-              <div className="text-left text-sm">
-                <p className="font-medium text-sm">
-                  {createdProject.webhook.success
-                    ? 'Webhook Configured'
-                    : 'Manual Webhook Setup Required'}
-                </p>
-                <p className="text-muted-foreground text-xs mt-0.5">
-                  {createdProject.webhook.message}
-                </p>
-                {!createdProject.webhook.success && createdProject.webhookUrl && (
-                  <div className="mt-2 p-2 rounded bg-muted font-mono text-xs break-all">
-                    {createdProject.webhookUrl}
-                  </div>
-                )}
               </div>
             </div>
           </CardContent>

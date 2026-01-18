@@ -307,6 +307,7 @@ export function useProjectWizard() {
           repoOwner,
           repoName,
           templateId: selectedTemplate.id,
+          isRepoPublic: !selectedRepo.private,
           settings: {
             autoProcess: true
           }

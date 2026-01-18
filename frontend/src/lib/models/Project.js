@@ -16,6 +16,10 @@ const projectSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+  isRepoPublic: {
+    type: Boolean,
+    default: false
+  },
   owner: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -29,11 +33,16 @@ const projectSchema = new mongoose.Schema({
   },
   webhookSecret: {
     type: String,
-    required: false
+    required: false,
+    select: false
   },
   webhookId: {
     type: String,
     required: false
+  },
+  webhookEnabled: {
+    type: Boolean,
+    default: false
   },
   settings: {
     autoProcess: {

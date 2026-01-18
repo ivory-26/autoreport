@@ -75,6 +75,7 @@ export async function POST(request) {
       repoOwner,
       repoName,
       templateId,
+      isRepoPublic,
       settings = {}
     } = body;
 
@@ -139,6 +140,7 @@ export async function POST(request) {
       name,
       repoUrl,
       repoFullName,
+      isRepoPublic: !!isRepoPublic,
       owner: user._id,
       ownerUsername: session.user.githubUsername,
       activeTemplateId: templateId,
@@ -231,6 +233,9 @@ export async function POST(request) {
             webhookId: webhookData.id,
             message: 'Webhook created successfully' 
           };
+          project.webhookEnabled = true;
+          project.webhookId = webhookData.id.toString();
+          await project.save();
         } else {
           const errorData = await webhookResponse.json();
           // Check if webhook already exists
@@ -240,6 +245,8 @@ export async function POST(request) {
               success: true, 
               message: 'Webhook already exists' 
             };
+            project.webhookEnabled = true;
+            await project.save();
           } else if (webhookResponse.status === 404) {
             // 404 usually means the user doesn't have admin access to the repo
             webhookSetup = { 

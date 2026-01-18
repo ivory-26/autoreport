@@ -131,13 +131,18 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
                         Open Repository
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <AlertDialogTrigger asChild>
-                      <DropdownMenuItem className="text-destructive focus:text-destructive cursor-pointer">
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete Project
-                      </DropdownMenuItem>
-                    </AlertDialogTrigger>
+
+                    {!isShared && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <AlertDialogTrigger asChild>
+                          <DropdownMenuItem className="text-destructive focus:text-destructive cursor-pointer">
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete Project
+                          </DropdownMenuItem>
+                        </AlertDialogTrigger>
+                      </>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
 

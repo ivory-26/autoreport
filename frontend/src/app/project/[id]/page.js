@@ -19,7 +19,7 @@ import {
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-async function getReportData(id) {
+async function getReportData(id, username) {
   await dbConnect();
 
   const reportData = await Report.findById(id).lean();
@@ -28,7 +28,19 @@ async function getReportData(id) {
     return null;
   }
 
-  const projectData = await Project.findById(reportData.projectId).lean();
+  // Find project and check ownership to determine if we should include sensitive data
+  let projectQuery = Project.findById(reportData.projectId);
+  
+  // First get a lightweight version to check owner
+  const basicProject = await Project.findById(reportData.projectId).select('ownerUsername').lean();
+  const isOwner = basicProject && basicProject.ownerUsername?.toLowerCase() === username?.toLowerCase();
+
+  // If owner, include the secret
+  if (isOwner) {
+    projectQuery = projectQuery.select('+webhookSecret');
+  }
+
+  const projectData = await projectQuery.lean();
 
   const logsData = await AutoLog.find({ projectId: reportData.projectId })
     .sort({ createdAt: -1 })
@@ -56,7 +68,8 @@ export default async function ProjectPage({ params }) {
   }
 
   const { id } = await params;
-  const data = await getReportData(id);
+  const username = session.user?.githubUsername || session.user?.name;
+  const data = await getReportData(id, username);
 
   if (!data) {
     notFound();

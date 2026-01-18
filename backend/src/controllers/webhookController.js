@@ -79,7 +79,7 @@ async function handleGitHubWebhook(req, res) {
     const project = await Project.findOne({ 
       repoFullName,
       status: 'active'
-    });
+    }).select('+webhookSecret');
 
     if (!project) {
       console.log(`[Webhook] Project not found for ${repoFullName}`);

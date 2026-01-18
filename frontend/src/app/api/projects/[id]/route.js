@@ -41,6 +41,17 @@ export async function DELETE(request, { params }) {
       );
     }
 
+    // Security Check: Only the owner can delete a project
+    const username = session.user?.githubUsername || session.user?.name;
+    const isOwner = project.ownerUsername?.toLowerCase() === username?.toLowerCase();
+
+    if (!isOwner) {
+      return NextResponse.json(
+        { error: 'Forbidden - Only the project owner can delete this project' },
+        { status: 403 }
+      );
+    }
+
     // Attempt to delete GitHub webhook
     if (session.accessToken && project.repoFullName) {
       try {
