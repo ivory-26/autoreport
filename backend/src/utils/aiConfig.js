@@ -11,11 +11,11 @@ const MODELS = {
   // Using Llama 3.3 70B as primary - better free tier limits (30 RPM, higher TPM)
   // The specialized models (qwen, gpt-oss) have stricter limits (60 RPM but only 1K RPD, 6K TPM)
   ANALYZER: {
-    PRIMARY: 'gpt-oss-120b',
+    PRIMARY: 'openai/gpt-oss-120b',
     FALLBACK: 'llama-3.1-8b-instant'
   },
   WRITER: {
-    PRIMARY: 'qwen3-32b',
+    PRIMARY: 'qwen/qwen3-32b',
     FALLBACK: 'llama-3.1-8b-instant'
   }
 };
