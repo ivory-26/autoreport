@@ -31,27 +31,21 @@ const AlertDialogContent = React.forwardRef(({ className, children, ...props }, 
     <AlertDialogOverlay />
     <AlertDialogPrimitive.Content
       ref={ref}
-      asChild
+      className={cn(
+        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-2xl sm:rounded-2xl",
+        "data-[state=open]:animate-in data-[state=closed]:animate-out",
+        "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+        "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+        "data-[state=closed]:slide-out-to-top-[2%] data-[state=open]:slide-in-from-bottom-[2%]",
+        className
+      )}
       {...props}
     >
-      <motion.div
-        initial={{ opacity: 0, y: "10%", scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{
-          type: "spring",
-          damping: 25,
-          stiffness: 300
-        }}
-        className={cn(
-          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-2xl sm:rounded-2xl",
-          className
-        )}
-      >
-        {children}
-      </motion.div>
+      {children}
     </AlertDialogPrimitive.Content>
   </AlertDialogPortal>
 ))
+
 
 
 AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName
