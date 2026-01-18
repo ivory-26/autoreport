@@ -8,6 +8,7 @@
 const { getFileImportance, getTopImportantFiles, PRIORITY_FILES } = require('./gitParser');
 const { analyze } = require('./analyzerAgent');
 const { generate, generateSectionIntro } = require('./writerAgent');
+const { webhookQueue, JOB_STATUS } = require('./queue');
 
 /**
  * Fetch repository overview including README and structure
@@ -291,6 +292,12 @@ async function generateInitialReportContent({
         total: templateSections.length,
         sectionTitle: section.title
       });
+    }
+
+    // Check for abortion
+    if (jobId && await webhookQueue.isJobAborted(jobId)) {
+      console.log(`[RepoAnalyzer] Job ${jobId.substring(0, 8)} was aborted. Stopping generation.`);
+      throw new Error('JOB_ABORTED');
     }
 
     console.log(`[RepoAnalyzer] Generating content for section: ${section.title}`);

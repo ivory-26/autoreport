@@ -11,6 +11,7 @@ const Groq = require('groq-sdk');
 const { withTimeout, getTimeoutFromEnv, TimeoutError } = require('./timeout');
 const { WRITER_SYSTEM_PROMPT, createWriterUserPrompt, createSectionIntroPrompt } = require('../prompts/writerPrompt');
 const { MODELS, getGroqKeyPool } = require('../utils/aiConfig');
+const { webhookQueue, JOB_STATUS } = require('./queue');
 
 // Model configuration - primary and fallback models from shared config
 const PRIMARY_MODEL = MODELS.WRITER.PRIMARY;
@@ -383,6 +384,12 @@ async function generate({
 async function generateSectionIntro(section, projectMetadata, jobId = null) {
   const timeoutMs = getTimeoutFromEnv(15000); // Shorter timeout for intros
 
+  // Check for abortion
+  if (jobId && await webhookQueue.isJobAborted(jobId)) {
+    console.log(`[Writer] Job ${jobId.substring(0, 8)} was aborted. Stopping intro generation.`);
+    throw new Error('JOB_ABORTED');
+  }
+
   // Helper function to call the API with a specific model
   async function callWithModel(modelName) {
     const { client, keyInfo } = await getClientWithKey(jobId);
@@ -646,6 +653,12 @@ async function generateForAllSections({
 
   // Generate content for each section
   for (const targetSection of sectionsToUpdate) {
+    // Check for abortion
+    if (jobId && await webhookQueue.isJobAborted(jobId)) {
+      console.log(`[Writer] Job ${jobId.substring(0, 8)} was aborted. Stopping generation.`);
+      throw new Error('JOB_ABORTED');
+    }
+
     if (!targetSection.id || !targetSection.title) {
       console.error('[Writer] Invalid section - missing id or title:', targetSection);
       continue;

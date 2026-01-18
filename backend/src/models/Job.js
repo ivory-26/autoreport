@@ -12,7 +12,8 @@ const JOB_STATUS = {
   PROCESSING: 'processing',
   COMPLETED: 'completed',
   FAILED: 'failed',
-  DEAD: 'dead'
+  DEAD: 'dead',
+  ABORTED: 'aborted'
 };
 
 const jobSchema = new mongoose.Schema({

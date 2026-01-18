@@ -12,6 +12,7 @@ const { withTimeout, getTimeoutFromEnv, TimeoutError } = require('./timeout');
 const { ANALYZER_SYSTEM_PROMPT, createAnalyzerUserPrompt, createChunkedAnalyzerPrompt } = require('../prompts/analyzerPrompt');
 const { chunkDiff, mergeChunkAnalyses, DEFAULT_CHUNK_SIZE } = require('./chunkingService');
 const { MODELS, getGroqKeyPool } = require('../utils/aiConfig');
+const { webhookQueue, JOB_STATUS } = require('./queue');
 
 // Model configuration - primary and fallback models from shared config
 const PRIMARY_MODEL = MODELS.ANALYZER.PRIMARY;
@@ -392,6 +393,12 @@ async function analyzeChunked({
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
+    
+    // Check for abortion
+    if (jobId && await webhookQueue.isJobAborted(jobId)) {
+      console.log(`[Analyzer] Job ${jobId.substring(0, 8)} was aborted. Stopping chunked analysis.`);
+      throw new Error('JOB_ABORTED');
+    }
     
     // Send progress update
     if (onProgress) {

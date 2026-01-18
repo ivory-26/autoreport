@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const Project = require('../models/Project');
 const Report = require('../models/Report');
 const Template = require('../models/Template');
+const AutoLog = require('../models/AutoLog');
 const { analyze } = require('../services/analyzerAgent');
 const { generateForAllSections } = require('../services/writerAgent');
 const { autoLogger } = require('../services/autoLogger');
@@ -421,6 +422,7 @@ async function getProjectById(req, res) {
 async function deleteProject(req, res) {
   try {
     const { projectId } = req.params;
+    const { accessToken } = req.body; // Expect accessToken for webhook cleanup
 
     const project = await Project.findById(projectId);
     if (!project) {
@@ -430,17 +432,51 @@ async function deleteProject(req, res) {
       });
     }
 
-    // Delete associated report
-    await Report.deleteOne({ projectId: project._id });
+    // 1. Abort any active or pending jobs for this project
+    await webhookQueue.abortProjectJobs(projectId);
 
-    // Delete project
+    // 2. Delete GitHub Webhook if it exists and we have a token
+    if (project.webhookId && accessToken) {
+      try {
+        console.log(`[ProjectController] Deleting GitHub webhook ${project.webhookId} for ${project.repoFullName}`);
+        const response = await fetch(
+          `https://api.github.com/repos/${project.repoFullName}/hooks/${project.webhookId}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28'
+            }
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error(`[ProjectController] Failed to delete GitHub webhook:`, errorData);
+          // We continue anyway, the project must be deleted
+        }
+      } catch (webhookError) {
+        console.error(`[ProjectController] Error deleting GitHub webhook:`, webhookError);
+        // Continue
+      }
+    }
+
+    // 3. Delete associated data from DB
+    // Delete report
+    await Report.deleteOne({ projectId: project._id });
+    
+    // Delete logs
+    await AutoLog.deleteMany({ projectId: project._id });
+
+    // 4. Delete project itself
     await Project.deleteOne({ _id: project._id });
 
-    console.log(`[ProjectController] Deleted project: ${project.name}`);
+    console.log(`[ProjectController] Full cleanup completed for project: ${project.name}`);
 
     res.status(200).json({
       success: true,
-      message: 'Project deleted successfully'
+      message: 'Project and associated resources deleted successfully'
     });
   } catch (error) {
     console.error('[ProjectController] Error deleting project:', error);

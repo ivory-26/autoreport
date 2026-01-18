@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const Project = require('../models/Project');
 const Report = require('../models/Report');
 const Template = require('../models/Template');
-const { webhookQueue } = require('../services/queue');
+const { webhookQueue, JOB_STATUS } = require('../services/queue');
 const { processWebhookPayload } = require('../services/gitParser');
 const { analyze } = require('../services/analyzerAgent');
 const { generateForAllSections } = require('../services/writerAgent');
@@ -503,7 +503,12 @@ async function processWebhookJob(job) {
 
     console.log(`[Webhook] Processed commit ${commit.shortHash}: ${successfulUpdates.length} sections updated`);
 
-  } catch (error) {
+    // If job was aborted, don't mark as error in logs or re-throw for retry
+    if (await webhookQueue.isJobAborted(job.id)) {
+      console.log(`[Webhook] Job ${job.id.substring(0, 8)} cleanup completed after abortion.`);
+      return;
+    }
+
     // Log error to AutoLog
     await autoLogger.logError({
       projectId,

@@ -438,6 +438,42 @@ class WebhookQueue extends EventEmitter {
   }
 
   /**
+   * Abort all jobs related to a project (called when project is deleted)
+   * @param {string} projectId - Project ID
+   * @returns {Promise<number>} - Number of jobs aborted
+   */
+  async abortProjectJobs(projectId) {
+    // 1. Mark all pending jobs as ABORTED
+    const pendingResult = await Job.updateMany(
+      { bucketKey: projectId, status: JOB_STATUS.PENDING },
+      { $set: { status: JOB_STATUS.ABORTED, completedAt: new Date() } }
+    );
+
+    // 2. Mark all processing jobs as ABORTED
+    // This serves as a flag for the running processor to stop
+    const processingResult = await Job.updateMany(
+      { bucketKey: projectId, status: JOB_STATUS.PROCESSING },
+      { $set: { status: JOB_STATUS.ABORTED } }
+    );
+
+    const total = pendingResult.modifiedCount + processingResult.modifiedCount;
+    if (total > 0) {
+      console.log(`[Queue] Aborted ${total} jobs for project ${projectId}`);
+    }
+    return total;
+  }
+
+  /**
+   * Check if a specific job has been aborted
+   * @param {string} jobId - Job ID
+   * @returns {Promise<boolean>} - True if aborted
+   */
+  async isJobAborted(jobId) {
+    const job = await Job.findById(jobId).select('status').lean();
+    return job?.status === JOB_STATUS.ABORTED;
+  }
+
+  /**
    * Clear all pending jobs (for maintenance)
    * @returns {Promise<number>} - Number of jobs cleared
    */
