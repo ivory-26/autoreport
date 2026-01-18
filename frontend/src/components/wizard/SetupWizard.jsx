@@ -191,47 +191,58 @@ function RepoSelectionStep({
  * Template selection step
  */
 function TemplateSelectionStep({ templates, selectedTemplate, onSelect, isLoading }) {
-  console.log('[TemplateSelectionStep] templates:', templates, 'isLoading:', isLoading);
-
   return (
-    <ScrollArea className="h-[300px] pr-4">
-      <div className="space-y-3">
+    <ScrollArea className="h-[350px] pr-4">
+      <div className="grid grid-cols-1 gap-4 p-1">
         {templates.length === 0 && !isLoading ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p>No templates available</p>
-            <p className="text-xs mt-2">Templates may not be seeded in the database yet.</p>
+          <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl">
+            <FileText className="h-12 w-12 mx-auto mb-3 opacity-20" />
+            <p className="font-medium">No templates available</p>
+            <p className="text-xs mt-1">Templates may not be seeded in the database yet.</p>
           </div>
         ) : (
           templates.map((template) => (
             <Card
               key={template.id}
-              className={`cursor-pointer transition-all hover:shadow-md ${selectedTemplate?.id === template.id
-                ? 'border-primary ring-2 ring-primary/20'
-                : 'hover:border-primary/50'
+              className={`cursor-pointer transition-all duration-300 relative overflow-hidden group ${selectedTemplate?.id === template.id
+                ? 'border-primary ring-2 ring-primary/20 bg-primary/5'
+                : 'hover:border-primary/40 hover:bg-accent/50'
                 }`}
               onClick={() => onSelect(template)}
             >
-              <CardContent className="p-3">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
+              {selectedTemplate?.id === template.id && (
+                <div className="absolute top-0 right-0 p-2">
+                  <div className="bg-primary text-primary-foreground rounded-full p-0.5">
+                    <CheckCircle2 className="h-4 w-4" />
+                  </div>
+                </div>
+              )}
+              <CardContent className="p-4">
+                <div className="flex items-start gap-4">
+                  <div className={`p-3 rounded-xl transition-colors ${selectedTemplate?.id === template.id ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary'}`}>
+                    <FileText className="h-6 w-6" />
+                  </div>
+                  <div className="flex-1 space-y-1">
                     <div className="flex items-center gap-2">
-                      <h4 className="font-medium">{template.name}</h4>
-                      <Badge variant="outline" className="text-xs">
+                      <h4 className="font-bold text-sm leading-none">{template.name}</h4>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 uppercase font-bold tracking-wider">
                         {template.standard}
                       </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground mt-1">
+                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
                       {template.description}
                     </p>
-                    <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                      <span>{template.sectionsCount} sections</span>
-                      <span>v{template.version}</span>
+                    <div className="flex items-center gap-4 mt-2 text-[10px] font-medium text-muted-foreground/70 uppercase tracking-tight">
+                      <span className="flex items-center gap-1.5">
+                        <List className="h-3 w-3" />
+                        {template.sectionsCount} Sections
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="h-3 w-3" />
+                        v{template.version}
+                      </span>
                     </div>
                   </div>
-                  {selectedTemplate?.id === template.id && (
-                    <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />
-                  )}
                 </div>
               </CardContent>
             </Card>
@@ -239,14 +250,16 @@ function TemplateSelectionStep({ templates, selectedTemplate, onSelect, isLoadin
         )}
 
         {isLoading && (
-          <div className="flex items-center justify-center py-4">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm font-medium animate-pulse">Loading templates...</p>
           </div>
         )}
       </div>
     </ScrollArea>
   );
 }
+
 
 /**
  * Review step
@@ -258,85 +271,97 @@ function ReviewStep({
   onProjectNameChange
 }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
       <div className="space-y-2">
-        <label htmlFor="projectName" className="text-sm font-medium">
+        <label htmlFor="projectName" className="text-sm font-bold tracking-tight text-foreground/80">
           Project Name
         </label>
-        <input
-          id="projectName"
-          type="text"
-          value={projectName}
-          onChange={(e) => onProjectNameChange(e.target.value)}
-          placeholder="Enter project name"
-          className="w-full px-4 py-2 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-        />
+        <div className="relative group">
+          <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+          <input
+            id="projectName"
+            type="text"
+            value={projectName}
+            onChange={(e) => onProjectNameChange(e.target.value)}
+            placeholder="Enter a memorable project name"
+            className="w-full pl-10 pr-4 py-2.5 border rounded-xl bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+          />
+        </div>
       </div>
 
-      <Separator />
-
       <div className="space-y-3">
-        <h4 className="text-sm font-medium">Review Your Selection</h4>
+        <h4 className="text-sm font-bold tracking-tight text-foreground/80">Review Configuration</h4>
 
-        <Card>
-          <CardContent className="p-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <GitBranch className="h-4 w-4 text-primary" />
+        <div className="grid gap-3">
+          <Card className="border-none bg-muted/30">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-2.5 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+                  <GitBranch className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Source Repository</p>
+                  <p className="text-sm font-bold truncate max-w-[200px] md:max-w-[300px]">
+                    {selectedRepo?.fullName}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-medium">Repository</p>
-                <p className="text-sm text-muted-foreground">
-                  {selectedRepo?.fullName}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              <Badge variant="outline" className="rounded-md font-mono text-[10px]">
+                {selectedRepo?.private ? 'Private' : 'Public'}
+              </Badge>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardContent className="p-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <FileText className="h-4 w-4 text-primary" />
+          <Card className="border-none bg-muted/30">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-2.5 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Documentation Template</p>
+                  <p className="text-sm font-bold">
+                    {selectedTemplate?.name}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-medium">Template</p>
-                <p className="text-sm text-muted-foreground">
-                  {selectedTemplate?.name}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              <Badge variant="secondary" className="rounded-md font-mono text-[10px]">
+                {selectedTemplate?.standard}
+              </Badge>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {selectedRepo && !selectedRepo.permissions?.admin && (
-        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5" />
-            <div className="text-sm">
-              <p className="font-medium text-amber-800 font-semibold flex items-center gap-1.5">
-                Admin Permissions Required
+        <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/50">
+          <div className="flex items-start gap-3">
+            <div className="p-1 rounded-full bg-amber-100 dark:bg-amber-900/30">
+              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div className="text-xs">
+              <p className="font-bold text-amber-900 dark:text-amber-400">
+                Admin Permissions Missing
               </p>
-              <p className="text-amber-700 mt-1">
-                You are a collaborator but not an admin of this repository.
-                AutoReport can generate an initial report, but you'll need the repository owner to set up a webhook for automatic updates.
+              <p className="text-amber-700/80 dark:text-amber-500/80 mt-1 leading-relaxed">
+                You are a collaborator but not an admin. Webhooks won't be configured automatically, but you can still generate the initial report.
               </p>
             </div>
           </div>
         </div>
       )}
 
-      <div className="p-3 rounded-lg bg-muted/50 border">
-        <div className="flex items-start gap-2">
-          <Sparkles className="h-4 w-4 text-primary mt-0.5" />
-          <div className="text-sm">
-            <p className="font-medium">What happens next?</p>
-            <p className="text-muted-foreground mt-1">
+      <div className="p-4 rounded-xl bg-primary/5 border border-primary/10">
+        <div className="flex items-start gap-3">
+          <div className="p-1 rounded-full bg-primary/10">
+            <CheckCircle2 className="h-4 w-4 text-primary" />
+          </div>
+          <div className="text-xs">
+            <p className="font-bold text-primary">Next Steps</p>
+            <p className="text-muted-foreground mt-1 leading-relaxed">
               {selectedRepo?.permissions?.admin
-                ? "We'll create your project and set up a GitHub webhook automatically. Every time you push code, AutoReport will analyze and update your documentation."
-                : "We'll create your project and generate an initial report. To enable automatic updates on every push, a webhook will need to be configured manually."}
+                ? "We'll create the project and set up a GitHub webhook. AutoReport will update your documentation on every push."
+                : "We'll generate an initial report now. To enable automatic updates, the repo owner will need to configure a webhook later."}
             </p>
           </div>
         </div>
@@ -344,6 +369,7 @@ function ReviewStep({
     </div>
   );
 }
+
 
 /**
  * Success step with inline collaborator invitations
@@ -386,44 +412,51 @@ function SuccessStep({ createdProject, onClose, generationProgress }) {
     onClose();
   };
 
-  return (
-    <div className="text-center space-y-4 py-2">
-      <div className="flex justify-center">
-        <div className="p-3 rounded-full bg-green-100 dark:bg-green-900/30">
-          <CheckCircle2 className="h-10 w-10 text-green-600 dark:text-green-400" />
-        </div>
-      </div>
+  const progress = generationProgress?.percent || 0;
 
-      <div>
-        <h3 className="text-lg font-semibold">Project Created!</h3>
-        <p className="text-muted-foreground text-sm mt-1">
-          Your project &quot;{createdProject?.project?.name}&quot; has been created successfully.
+  return (
+    <div className="space-y-6 py-4 animate-in fade-in zoom-in-95 duration-500">
+      <div className="text-center space-y-2">
+        <div className="flex justify-center mb-4">
+          <div className="p-4 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 relative">
+            <CheckCircle2 className="h-12 w-12" />
+            <div className="absolute -top-1 -right-1 bg-primary text-primary-foreground rounded-full p-1 border-2 border-background animate-bounce">
+              <Sparkles className="h-4 w-4" />
+            </div>
+          </div>
+        </div>
+
+        <h3 className="text-2xl font-bold tracking-tight">Project Ready!</h3>
+        <p className="text-muted-foreground text-sm max-w-sm mx-auto">
+          Your project <span className="text-foreground font-semibold">&quot;{createdProject?.project?.name}&quot;</span> has been successfully initialized.
         </p>
       </div>
 
       {/* Initial Report Generation Status */}
       {createdProject?.generatingInitialReport && (
-        <Card className="border-blue-200 dark:border-blue-800">
-          <CardContent className="p-3">
-            <div className="flex items-start gap-2">
-              <div className="h-4 w-4 mt-0.5">
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
+        <Card className="border-blue-100 dark:border-blue-900 bg-blue-50/30 dark:bg-blue-900/10 overflow-hidden relative">
+          <div className="absolute top-0 left-0 h-1 bg-blue-500 transition-all duration-500" style={{ width: `${progress}%` }} />
+          <CardContent className="p-5">
+            <div className="flex items-start gap-4">
+              <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400" />
               </div>
-              <div className="text-left text-sm w-full">
-                <p className="font-medium text-sm text-blue-600 dark:text-blue-400">
-                  Your report is being generated
+              <div className="text-left space-y-2 flex-1">
+                <div className="flex justify-between items-center">
+                  <p className="font-bold text-sm text-blue-700 dark:text-blue-400">
+                    Generating Initial Report
+                  </p>
+                  <span className="text-xs font-mono text-blue-600 font-bold">{Math.round(progress)}%</span>
+                </div>
+                <p className="text-muted-foreground text-[11px] leading-relaxed">
+                  We are analyzing your repository and generating the first set of documentation. This usually takes 1-2 minutes.
                 </p>
-                <p className="text-muted-foreground text-xs mt-0.5">
-                  You will receive a notification as a GitHub issue with your project link once the report is ready.
-                </p>
-                {generationProgress?.percent > 0 && (
-                  <div className="w-full bg-blue-100 dark:bg-blue-900 h-1.5 rounded-full mt-2 overflow-hidden">
-                    <div
-                      className="bg-blue-600 h-full transition-all duration-500"
-                      style={{ width: `${generationProgress.percent}%` }}
-                    />
-                  </div>
-                )}
+                <div className="w-full bg-blue-100 dark:bg-blue-900/50 h-2 rounded-full mt-2 overflow-hidden">
+                  <div
+                    className="bg-blue-600 h-full transition-all duration-500"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
               </div>
             </div>
           </CardContent>
@@ -432,16 +465,18 @@ function SuccessStep({ createdProject, onClose, generationProgress }) {
 
       {/* Report Generated Successfully */}
       {!createdProject?.generatingInitialReport && createdProject?.report && (
-        <Card className="border-green-200 dark:border-green-800">
-          <CardContent className="p-3">
-            <div className="flex items-start gap-2">
-              <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
-              <div className="text-left text-sm flex-1">
-                <p className="font-medium text-sm text-green-600 dark:text-green-400">
-                  Initial Report Generated
+        <Card className="border-green-100 dark:border-green-900 bg-green-50/30 dark:bg-green-900/10 shadow-sm transition-all duration-300 hover:shadow-md">
+          <CardContent className="p-5">
+            <div className="flex items-start gap-4">
+              <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center flex-shrink-0">
+                <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+              </div>
+              <div className="text-left space-y-1 flex-1">
+                <p className="font-bold text-sm text-green-700 dark:text-green-400">
+                  Documentation Generated
                 </p>
-                <p className="text-muted-foreground text-xs mt-0.5">
-                  Your first report has been created and is ready to view.
+                <p className="text-muted-foreground text-xs leading-relaxed">
+                  Your project report is complete and ready for review. You can view it now or continue setting up your team.
                 </p>
               </div>
             </div>
@@ -451,23 +486,32 @@ function SuccessStep({ createdProject, onClose, generationProgress }) {
 
       {/* Invite Team Members - Interactive Form */}
       {createdProject?.project?.id && (
-        <InviteCollaboratorForm projectId={createdProject.project.id} />
+        <div className="border-t pt-6 mt-2">
+          <div className="flex items-center gap-2 mb-4 text-sm font-semibold text-foreground px-1">
+            <UserPlus className="h-4 w-4 text-primary" />
+            Invite Collaborators
+          </div>
+          <InviteCollaboratorForm projectId={createdProject.project.id} />
+        </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-2 justify-center pt-2">
-        <Button variant="outline" onClick={handleGoToDashboard}>
-          Go to Dashboard
+      <div className="flex flex-col sm:flex-row gap-3 pt-4">
+        <Button variant="ghost" onClick={handleGoToDashboard} className="flex-1 rounded-xl">
+          Back to Dashboard
         </Button>
-        {createdProject?.report?._id && !createdProject?.generatingInitialReport && (
-          <Button onClick={handleViewReport} className="gap-2 bg-blue-600 hover:bg-blue-700">
-            View Report
-            <FileText className="h-4 w-4" />
-          </Button>
-        )}
-        <Button onClick={handleViewProject} className="gap-2">
-          View Project
-          <ExternalLink className="h-4 w-4" />
-        </Button>
+        <div className="flex flex-1 gap-2">
+          {createdProject?.report?._id && !createdProject?.generatingInitialReport ? (
+            <Button onClick={handleViewReport} className="flex-1 gap-2 bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/20 rounded-xl">
+              View Report
+              <FileText className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button onClick={handleViewProject} className="flex-1 gap-2 rounded-xl shadow-lg shadow-primary/20">
+              Go to Project
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

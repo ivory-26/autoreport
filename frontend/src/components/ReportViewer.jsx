@@ -536,72 +536,82 @@ export function ReportViewer({ report: initialReport, onDismissHighlight, repoUr
                 const isExpanded = expandedOutlineSections.has(section.number);
                 const isLastItem = index === outlineStructure.length - 1;
 
+                // Bubbling highlight: Parent gets highlight if itself OR any subsection has changes
+                const hasAnySubsectionChanges = section.subsections?.some(sub => sub.aiLastTouched);
+                const showParentHighlight = section.aiLastTouched || hasAnySubsectionChanges;
+
                 return (
                   <div key={section.id} className={isLastItem ? 'pb-2' : ''}>
                     {/* Parent Section */}
                     <div
-                      className="flex items-center gap-1 group rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
+                      className="flex items-start gap-1 group rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
                     >
-                      {hasSubsections && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleOutlineSection(section.number);
-                          }}
-                          className="p-1 hover:bg-muted rounded transition-all"
-                        >
-                          <ChevronRight
-                            className={`h-3 w-3 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''
-                              }`}
-                          />
-                        </button>
-                      )}
+                      <div className="pt-2 pl-1">
+                        {hasSubsections ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleOutlineSection(section.number);
+                            }}
+                            className="p-1 hover:bg-muted rounded transition-all"
+                          >
+                            <ChevronRight
+                              className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''
+                                }`}
+                            />
+                          </button>
+                        ) : (
+                          <div className="w-6" />
+                        )}
+                      </div>
+
                       <button
                         onClick={() => navigateToSection(section.id)}
-                        className={`flex-1 text-left px-3 py-2 rounded-lg transition-all ${!hasSubsections ? 'ml-7' : ''
-                          } ${section.aiLastTouched
-                            ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800'
-                            : 'hover:bg-muted/50'
+                        className={`flex-1 text-left px-3 py-2 rounded-lg transition-all flex items-start gap-2.5 ${showParentHighlight
+                          ? 'bg-green-50/50 dark:bg-green-950/10 border border-green-200/50 dark:border-green-800/30'
+                          : 'hover:bg-muted/50 border border-transparent'
                           }`}
                       >
-                        <span className="text-muted-foreground/60 text-sm mr-2.5 font-mono">
+                        <span className="text-muted-foreground/50 text-xs font-mono w-6 pt-1 shrink-0">
                           {section.number}
                         </span>
-                        <span className={`font-medium text-sm leading-relaxed ${section.aiLastTouched ? 'text-green-700 dark:text-green-400' : 'text-foreground/85'
-                          }`}>
-                          {section.title}
-                        </span>
-                        {section.aiLastTouched && (
-                          <span className="ml-2 inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                        )}
+                        <div className="flex-1 flex items-start justify-between gap-2 pt-0.5">
+                          <span className={`font-semibold text-sm leading-snug ${section.aiLastTouched ? 'text-green-700 dark:text-green-400' : 'text-foreground/85'
+                            }`}>
+                            {section.title}
+                          </span>
+                          {section.aiLastTouched && (
+                            <span className="h-2 w-2 mt-1.5 rounded-full bg-green-500 animate-pulse shrink-0" />
+                          )}
+                        </div>
                       </button>
                     </div>
 
                     {/* Subsections */}
                     {hasSubsections && isExpanded && (
-                      <div className="ml-5 mt-1.5 space-y-1 border-l-2 border-muted pl-3">
-                        {section.subsections.map((subsection, subIndex) => {
-                          const isLastSubItem = subIndex === section.subsections.length - 1;
+                      <div className="ml-8 mt-1 space-y-0.5 border-l border-muted/50 pl-2">
+                        {section.subsections.map((subsection) => {
                           return (
                             <button
                               key={subsection.id}
                               onClick={() => navigateToSection(subsection.id)}
-                              className={`w-full text-left px-3 py-1.5 rounded-lg transition-all group ${isLastSubItem ? 'mb-1' : ''
-                                } ${subsection.aiLastTouched
-                                  ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800'
-                                  : 'hover:bg-muted/50'
+                              className={`w-full text-left px-3 py-1.5 rounded-lg transition-all group flex items-start gap-2.5 ${subsection.aiLastTouched
+                                  ? 'bg-green-50/80 dark:bg-green-950/20 border border-green-200/50 dark:border-green-800/50 shadow-sm'
+                                  : 'hover:bg-muted/50 border border-transparent'
                                 }`}
                             >
-                              <span className="text-muted-foreground/60 mr-2.5 text-sm font-mono">
+                              <span className="text-muted-foreground/40 text-[10px] font-mono w-7 pt-1.5 shrink-0">
                                 {subsection.number}
                               </span>
-                              <span className={`text-sm leading-relaxed ${subsection.aiLastTouched ? 'text-green-700 dark:text-green-400 font-medium' : 'text-foreground/75'
-                                }`}>
-                                {subsection.title}
-                              </span>
-                              {subsection.aiLastTouched && (
-                                <span className="ml-2 inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                              )}
+                              <div className="flex-1 flex items-start justify-between gap-2 py-0.5">
+                                <span className={`text-sm leading-snug ${subsection.aiLastTouched ? 'text-green-700 dark:text-green-400 font-bold' : 'text-foreground/75 font-medium'
+                                  }`}>
+                                  {subsection.title}
+                                </span>
+                                {subsection.aiLastTouched && (
+                                  <span className="h-1.5 w-1.5 mt-1.5 rounded-full bg-green-500 animate-pulse shrink-0" />
+                                )}
+                              </div>
                             </button>
                           );
                         })}
@@ -610,6 +620,7 @@ export function ReportViewer({ report: initialReport, onDismissHighlight, repoUr
                   </div>
                 );
               })}
+
             </div>
           </div>
         </div>

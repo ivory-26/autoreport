@@ -83,17 +83,15 @@
 }
 
 @keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
   100% {
-    background-position: -200% 0;
+    transform: translateX(100%);
   }
 }
 
 .animate-shimmer {
-  animation: shimmer 8s linear infinite;
+  animation: shimmer 2s infinite;
 }
+
 
 .bg-grid-zinc-200\/50 {
   background-size: 40px 40px;
