@@ -36,34 +36,28 @@ AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName
 
 const AlertDialogContent = React.forwardRef(({ className, children, ...props }, ref) => (
   <AlertDialogPortal>
-    <AnimatePresence>
-      <AlertDialogOverlay key="overlay" />
-      <AlertDialogPrimitive.Content
-        ref={ref}
-        asChild
-        {...props}
-        key="content"
+    <AlertDialogOverlay />
+    <AlertDialogPrimitive.Content
+      ref={ref}
+      asChild
+      {...props}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: "10%", scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{
+          type: "spring",
+          damping: 25,
+          stiffness: 300
+        }}
+        className={cn(
+          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-2xl sm:rounded-2xl",
+          className
+        )}
       >
-        <motion.div
-          initial={{ opacity: 0, y: "100%", x: "-50%" }}
-          animate={{ opacity: 1, y: "-50%", x: "-50%" }}
-          exit={{ opacity: 0, y: "100%", x: "-50%" }}
-          transition={{
-            type: "spring",
-            damping: 25,
-            stiffness: 300,
-            duration: 0.4
-          }}
-          className={cn(
-            "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg gap-4 border bg-background p-6 shadow-2xl sm:rounded-2xl",
-            className
-          )}
-        >
-          {children}
-        </motion.div>
-
-      </AlertDialogPrimitive.Content>
-    </AnimatePresence>
+        {children}
+      </motion.div>
+    </AlertDialogPrimitive.Content>
   </AlertDialogPortal>
 ))
 
