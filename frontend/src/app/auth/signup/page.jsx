@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Github, ArrowRight, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { motion } from 'framer-motion';
+import { motion } from "motion/react";
 import Link from 'next/link';
 
 const features = [

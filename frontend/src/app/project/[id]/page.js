@@ -88,22 +88,26 @@ export default async function ProjectPage({ params }) {
     <div className="mx-auto max-w-7xl px-4 py-8 space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
+        <div className="space-y-2 min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
             <Link href="/dashboard">
               <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-secondary rounded-full">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <h1 className="text-3xl font-bold tracking-tight leading-tight py-1">{project?.name || 'Project'}</h1>
-            <Badge variant="outline" className="text-sm px-3 py-1 shadow-sm border-primary/20 bg-primary/5 text-primary">
+            <h1 className="text-3xl font-bold tracking-tight leading-tight py-1 truncate min-w-0">
+              {project?.name || 'Project'}
+            </h1>
+            <Badge variant="outline" className="text-sm px-3 py-1 shadow-sm border-primary/20 bg-primary/5 text-primary shrink-0">
               {report.status}
             </Badge>
           </div>
           {project && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground ml-12">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground ml-12 min-w-0">
               <GitBranch className="h-4 w-4" />
-              <span className="font-mono">{project.repoFullName}</span>
+              <span className="font-mono truncate min-w-0">
+                {project.repoFullName}
+              </span>
               <a 
                 href={project.repoUrl} 
                 target="_blank" 

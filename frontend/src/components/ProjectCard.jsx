@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { formatRelativeTime, formatAbsoluteDateTime } from '@/lib/time';
-import { motion } from 'framer-motion';
+import { motion } from "motion/react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -108,10 +108,10 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
     >
       <Card className={`h-full flex flex-col overflow-hidden rounded-3xl border bg-card text-card-foreground shadow-sm transition-all hover:shadow-xl dark:bg-zinc-900/50 ${isShared ? 'border-blue-200 dark:border-blue-800' : ''}`}>
         <CardHeader className="pb-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1.5 overflow-hidden flex-1">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-xl font-bold truncate leading-tight tracking-tight py-1">
+          <div className="flex items-start justify-between gap-4 min-w-0">
+            <div className="space-y-1.5 overflow-hidden flex-1 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <CardTitle className="text-xl font-bold truncate leading-tight tracking-tight py-1 min-w-0">
                   {project.name}
                 </CardTitle>
                 {isShared && (
@@ -121,9 +121,9 @@ export function ProjectCard({ project, statusColor, formattedDate, isShared = fa
                   </Badge>
                 )}
               </div>
-              <CardDescription className="flex items-center gap-1.5 text-xs font-mono">
+              <CardDescription className="flex items-center gap-1.5 text-xs font-mono min-w-0">
                 <GitBranch className="h-3 w-3" />
-                <span className="truncate">{project.repoFullName}</span>
+                <span className="truncate min-w-0">{project.repoFullName}</span>
               </CardDescription>
             </div>
             <div className="flex items-center gap-2 shrink-0">

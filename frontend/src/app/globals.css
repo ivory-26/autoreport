@@ -150,3 +150,11 @@
     font-family: var(--font-sans);
   }
 }
+
+/* Custom 3D Utilities required for IsometricBox */
+.perspective-1000 {
+  perspective: 1000px;
+}
+.transform-style-3d {
+  transform-style: preserve-3d;
+}

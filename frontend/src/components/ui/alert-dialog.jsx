@@ -12,7 +12,7 @@ const AlertDialogTrigger = AlertDialogPrimitive.Trigger
 
 const AlertDialogPortal = AlertDialogPrimitive.Portal
 
-import { motion, AnimatePresence } from "framer-motion"
+import { motion, AnimatePresence } from "motion/react"
 
 const AlertDialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Overlay

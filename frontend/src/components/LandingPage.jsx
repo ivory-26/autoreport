@@ -1,6 +1,6 @@
 'use client';
 
-import { motion, useAnimation, useInView } from 'framer-motion';
+import { motion, useAnimation, useInView } from "motion/react";
 import { ArrowRight, Github, FileText, Zap, GitBranch, LayoutTemplate, Database, Bot, Terminal, Code2, Sparkles, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -97,7 +97,7 @@ export default function LandingPage({ session }) {
             </div>
 
             {/* Hero Section */}
-            <section className="relative pt-24 pb-32 px-6">
+            <section className="relative pt-24 pb-10 px-6">
                 <motion.div
                     variants={container}
                     initial="hidden"
@@ -141,6 +141,7 @@ export default function LandingPage({ session }) {
                     </motion.div>
                 </motion.div>
             </section>
+
 
             {/* Bento Grid Section */}
             <section className="px-4 pb-32 max-w-7xl mx-auto">

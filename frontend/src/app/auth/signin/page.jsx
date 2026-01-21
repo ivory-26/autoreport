@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useMemo, useState, Suspense } from 'react';
 import { signIn, useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Github, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { motion } from 'framer-motion';
+import { motion } from "motion/react";
 import Link from 'next/link';
 
 function SignInContent() {
@@ -27,23 +27,25 @@ function SignInContent() {
     }
   }, [status, router, callbackUrl]);
 
-  // Show error if exists
-  useEffect(() => {
-    if (errorParam) {
-      const errorMessages = {
-        'OAuthSignin': 'Error starting OAuth sign in flow',
-        'OAuthCallback': 'Error handling OAuth callback',
-        'OAuthCreateAccount': 'Could not create OAuth account',
-        'EmailCreateAccount': 'Could not create email account',
-        'Callback': 'Error in authentication callback',
-        'OAuthAccountNotLinked': 'This account is already linked to another user',
-        'EmailSignin': 'Check your email for a sign-in link',
-        'CredentialsSignin': 'Sign in failed. Check the details you provided.',
-        'SessionRequired': 'Please sign in to access this page',
-        'Default': 'An error occurred during authentication',
-      };
-      setError(errorMessages[errorParam] || errorMessages['Default']);
+  const errorMessageFromParam = useMemo(() => {
+    if (!errorParam) {
+      return null;
     }
+
+    const errorMessages = {
+      'OAuthSignin': 'Error starting OAuth sign in flow',
+      'OAuthCallback': 'Error handling OAuth callback',
+      'OAuthCreateAccount': 'Could not create OAuth account',
+      'EmailCreateAccount': 'Could not create email account',
+      'Callback': 'Error in authentication callback',
+      'OAuthAccountNotLinked': 'This account is already linked to another user',
+      'EmailSignin': 'Check your email for a sign-in link',
+      'CredentialsSignin': 'Sign in failed. Check the details you provided.',
+      'SessionRequired': 'Please sign in to access this page',
+      'Default': 'An error occurred during authentication',
+    };
+
+    return errorMessages[errorParam] || errorMessages['Default'];
   }, [errorParam]);
 
   const handleSignIn = async () => {
@@ -116,10 +118,10 @@ function SignInContent() {
           </CardHeader>
 
           <CardContent className="space-y-4">
-            {error && (
+            {(error || errorMessageFromParam) && (
               <Alert variant="destructive" className="mb-4">
                 <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription>{error || errorMessageFromParam}</AlertDescription>
               </Alert>
             )}
 
@@ -170,7 +172,7 @@ function SignInContent() {
 
             <div className="text-center space-y-2">
               <p className="text-sm text-muted-foreground">
-                Don't have an account yet?
+                Don&apos;t have an account yet?
               </p>
               <Link href="/auth/signup">
                 <Button variant="ghost" className="w-full group">

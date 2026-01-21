@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ModeToggle } from '@/components/ui/mode-toggle';
-import { motion } from 'framer-motion';
+import { motion } from "motion/react";
 import { LayoutDashboard, LogOut, Settings, Github } from 'lucide-react';
 
 export function Navbar() {

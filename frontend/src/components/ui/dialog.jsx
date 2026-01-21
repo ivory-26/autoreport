@@ -6,7 +6,7 @@ import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
-import { motion, AnimatePresence } from "framer-motion"
+import { motion, AnimatePresence } from "motion/react"
 
 const Dialog = DialogPrimitive.Root
 
