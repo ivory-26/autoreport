@@ -47,19 +47,19 @@ class WebhookQueue extends EventEmitter {
    */
   calculateConcurrency() {
     try {
-      // Check for GROQ_API_KEYS (comma-separated) or single GROQ_API_KEY
-      const keysString = process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY;
+      // Check for NVIDIA_API_KEYS (comma-separated) or single NVIDIA_API_KEY
+      const keysString = process.env.NVIDIA_API_KEYS || process.env.NVIDIA_API_KEY;
       if (!keysString) return 1;
-      
+
       const keyCount = keysString.split(',').filter(k => k.trim()).length;
-      
+
       // Match concurrency to number of keys, but cap at 5 for safety
       const concurrency = Math.min(keyCount, 5);
-      
+
       if (keyCount > 1) {
         console.log(`[Queue] Using concurrency=${concurrency} (${keyCount} API keys available)`);
       }
-      
+
       return concurrency;
     } catch (error) {
       console.warn('[Queue] Error calculating concurrency, defaulting to 1:', error.message);

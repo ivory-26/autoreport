@@ -14,7 +14,7 @@ const { processWebhookPayload } = require('../services/gitParser');
 const { analyze } = require('../services/analyzerAgent');
 const { generateForAllSections } = require('../services/writerAgent');
 const { autoLogger, STAGES } = require('../services/autoLogger');
-const { getGroqKeyPool } = require('../utils/aiConfig');
+const { getNimKeyPool } = require('../utils/aiConfig');
 
 /**
  * Verify GitHub webhook signature
@@ -526,7 +526,7 @@ async function processWebhookJob(job) {
     throw error; // Re-throw for queue retry logic
   } finally {
     // Release key assignment
-    const pool = getGroqKeyPool();
+    const pool = getNimKeyPool();
     if (pool && job.id) {
       pool.releaseJobKey(job.id);
     }

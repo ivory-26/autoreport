@@ -1,59 +1,40 @@
 /**
  * Analyzer Agent
- * 
+ *
  * Stage 1 of the AI pipeline. Analyzes code diffs and extracts
  * structured information for routing to report sections.
- * 
- * Uses Groq API with Llama 3 for generous rate limits (30 req/min free tier)
+ *
+ * Uses NVIDIA NIM API (moonshotai/kimi-k2.6) with token-aware chunking.
  */
 
-const Groq = require('groq-sdk');
 const { withTimeout, getTimeoutFromEnv, TimeoutError } = require('./timeout');
 const { ANALYZER_SYSTEM_PROMPT, createAnalyzerUserPrompt, createChunkedAnalyzerPrompt } = require('../prompts/analyzerPrompt');
 const { chunkDiff, mergeChunkAnalyses, DEFAULT_CHUNK_SIZE } = require('./chunkingService');
-const { MODELS, getGroqKeyPool } = require('../utils/aiConfig');
-const { webhookQueue, JOB_STATUS } = require('./queue');
+const { MODELS, getNimKeyPool } = require('../utils/aiConfig');
+const { callNimChatCompletion, extractNimContent } = require('../utils/nimClient');
+const { webhookQueue } = require('./queue');
 
-// Model configuration - primary and fallback models from shared config
+// Model configuration
 const PRIMARY_MODEL = MODELS.ANALYZER.PRIMARY;
 const FALLBACK_MODEL = MODELS.ANALYZER.FALLBACK;
 
-// Maximum tokens to use for diff (leaving room for prompt and response)
-const MAX_DIFF_TOKENS = 4000; // ~16000 chars assuming 4 chars per token
-const CHUNKING_THRESHOLD = DEFAULT_CHUNK_SIZE; // Use chunking for diffs larger than this
+// Token-aware limits (approx 4 chars/token)
+const MAX_DIFF_TOKENS = 4000;
+const CHUNKING_THRESHOLD = DEFAULT_CHUNK_SIZE;
 
 /**
- * Get a Groq client with an API key.
- * If jobId is provided, uses job-level key assignment (same key for entire job).
- * Otherwise falls back to random key selection.
- * @param {string} [jobId] - Optional job ID for consistent key usage within a job
- * @returns {Promise<Object>} - { client: Groq, keyInfo: { keyIndex, masked, poolSize } }
+ * Get key info from the pool for a given job
  */
-async function getClientWithKey(jobId = null) {
-  const pool = getGroqKeyPool();
+function getKeyInfo(jobId) {
+  const pool = getNimKeyPool();
   if (!pool) {
-    throw new Error('GROQ_API_KEYS environment variable is not set.');
+    throw new Error('NVIDIA_API_KEYS environment variable is not set.');
   }
-  
-  let keyInfo;
-  if (jobId) {
-    // Use job-level key assignment - same key for all calls in this job
-    keyInfo = pool.getKeyForJob(jobId) || pool.assignKeyForJob(jobId);
-  } else {
-    // Fallback to random selection for standalone calls
-    keyInfo = await pool.getNextKey();
-  }
-  
-  const client = new Groq({
-    apiKey: keyInfo.key
-  });
-  
-  return { client, keyInfo };
+  return jobId
+    ? pool.getKeyForJob(jobId) || pool.assignKeyForJob(jobId)
+    : pool.getNextKey();
 }
 
-/**
- * Default analysis result for fallback scenarios
- */
 const DEFAULT_ANALYSIS = {
   changeType: 'unknown',
   impactLevel: 'patch',
@@ -63,21 +44,15 @@ const DEFAULT_ANALYSIS = {
   suggestedSections: []
 };
 
-/**
- * Parse JSON from AI response, handling common issues
- * @param {string} text - Raw response text
- * @returns {Object} - Parsed JSON object
- */
 function parseAIResponse(text) {
-  // Remove markdown code fences if present
   let cleaned = text.trim();
-  
+
   if (cleaned.startsWith('```json')) {
     cleaned = cleaned.slice(7);
   } else if (cleaned.startsWith('```')) {
     cleaned = cleaned.slice(3);
   }
-  
+
   if (cleaned.endsWith('```')) {
     cleaned = cleaned.slice(0, -3);
   }
@@ -87,7 +62,6 @@ function parseAIResponse(text) {
   try {
     return JSON.parse(cleaned);
   } catch (error) {
-    // Try to extract JSON from the response
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -96,30 +70,24 @@ function parseAIResponse(text) {
   }
 }
 
-/**
- * Validate analysis result structure
- * @param {Object} result - Analysis result to validate
- * @returns {Object} - Validated and normalized result
- */
 function validateAnalysisResult(result) {
   const validated = {
-    changeType: ['feature', 'bugfix', 'refactor', 'config', 'docs', 'test'].includes(result.changeType) 
-      ? result.changeType 
+    changeType: ['feature', 'bugfix', 'refactor', 'config', 'docs', 'test'].includes(result.changeType)
+      ? result.changeType
       : 'unknown',
-    impactLevel: ['major', 'minor', 'patch'].includes(result.impactLevel) 
-      ? result.impactLevel 
+    impactLevel: ['major', 'minor', 'patch'].includes(result.impactLevel)
+      ? result.impactLevel
       : 'patch',
     entities: Array.isArray(result.entities) ? result.entities.slice(0, 20) : [],
     semanticTags: Array.isArray(result.semanticTags) ? result.semanticTags.slice(0, 10) : ['general'],
-    technicalSummary: typeof result.technicalSummary === 'string' 
-      ? result.technicalSummary.substring(0, 1000) 
+    technicalSummary: typeof result.technicalSummary === 'string'
+      ? result.technicalSummary.substring(0, 1000)
       : 'No summary available.',
-    suggestedSections: Array.isArray(result.suggestedSections) 
-      ? result.suggestedSections.slice(0, 5) 
+    suggestedSections: Array.isArray(result.suggestedSections)
+      ? result.suggestedSections.slice(0, 5)
       : []
   };
 
-  // Validate entities
   validated.entities = validated.entities.map(entity => ({
     type: entity.type || 'unknown',
     name: String(entity.name || 'unnamed').substring(0, 100),
@@ -128,7 +96,6 @@ function validateAnalysisResult(result) {
     description: String(entity.description || '').substring(0, 300)
   }));
 
-  // Validate suggested sections
   validated.suggestedSections = validated.suggestedSections.map(section => ({
     sectionId: String(section.sectionId || ''),
     confidence: Math.min(1, Math.max(0, Number(section.confidence) || 0)),
@@ -138,19 +105,44 @@ function validateAnalysisResult(result) {
   return validated;
 }
 
-/**
- * Analyze a code diff and extract structured information
- * @param {Object} params
- * @param {string} params.commitHash - Commit hash
- * @param {string} params.commitMessage - Commit message
- * @param {string} params.author - Commit author
- * @param {string} params.diff - Git diff content
- * @param {Array} params.filesChanged - List of changed files
- * @param {Object} params.projectContext - Project context
- * @param {Array} params.templateSections - Template sections for routing
- * @param {string} [params.jobId] - Optional job ID for consistent key usage
- * @returns {Promise<Object>} - Analysis result
- */
+function isRateLimitError(error) {
+  const message = error?.message?.toLowerCase() || '';
+  const status = error?.status || error?.statusCode || error?.response?.status;
+  return (
+    status === 413 ||
+    status === 429 ||
+    message.includes('rate limit') ||
+    message.includes('token') ||
+    message.includes('too large') ||
+    message.includes('request too large')
+  );
+}
+
+async function callNimWithKey({ messages, model, timeoutMs, jobId, keyInfo }) {
+  const pool = getNimKeyPool();
+
+  try {
+    const responseData = await callNimChatCompletion({
+      apiKey: keyInfo.key,
+      model,
+      messages,
+      maxTokens: 2048,
+      temperature: 0.3,
+      timeoutMs
+    });
+
+    const content = extractNimContent(responseData);
+
+    if (pool) pool.recordSuccess(keyInfo.keyIndex);
+
+    return { content, keyInfo };
+  } catch (error) {
+    const isRateLimit = isRateLimitError(error);
+    if (pool) pool.recordFailure(keyInfo.keyIndex, isRateLimit);
+    throw error;
+  }
+}
+
 async function analyze({
   commitHash,
   commitMessage,
@@ -159,115 +151,56 @@ async function analyze({
   filesChanged,
   projectContext,
   templateSections,
-  onProgress, // Optional progress callback for heartbeat
-  jobId // Optional job ID for key assignment
+  onProgress,
+  jobId
 }) {
   const timeoutMs = Math.max(getTimeoutFromEnv(60000), 60000);
 
-  // Check if diff needs chunking
+  // Token-aware chunking
   if (diff && diff.length > CHUNKING_THRESHOLD) {
     console.log(`[Analyzer] Large diff detected (${diff.length} chars), using chunked analysis`);
     return analyzeChunked({
-      commitHash,
-      commitMessage,
-      author,
-      diff,
-      filesChanged,
-      projectContext,
-      templateSections,
-      onProgress,
-      jobId
+      commitHash, commitMessage, author, diff,
+      filesChanged, projectContext, templateSections, onProgress, jobId
     });
   }
 
-  // Helper function to call the API with a specific model
-  async function callWithModel(modelName, diffContent) {
-    const { client, keyInfo } = await getClientWithKey(jobId);
-    const pool = getGroqKeyPool();
+  const userPrompt = createAnalyzerUserPrompt({
+    commitHash, commitMessage, author, diff, filesChanged, projectContext, templateSections
+  });
 
-    try {
-      const userPrompt = createAnalyzerUserPrompt({
-        commitHash,
-        commitMessage,
-        author,
-        diff: diffContent,
-        filesChanged,
-        projectContext,
-        templateSections
-      });
+  const messages = [
+    { role: 'system', content: ANALYZER_SYSTEM_PROMPT + '\n\nRespond only with valid JSON. No markdown code fences.' },
+    { role: 'user', content: userPrompt }
+  ];
 
-      const chatCompletion = await client.chat.completions.create({
-        messages: [
-          {
-            role: 'system',
-            content: ANALYZER_SYSTEM_PROMPT + '\n\nRespond only with valid JSON. No markdown code fences.'
-          },
-          {
-            role: 'user',
-            content: userPrompt
-          }
-        ],
-        model: modelName,
-        temperature: 0.3,
-        max_tokens: 2048,
-        response_format: { type: 'json_object' }
-      });
-
-      // Record success
-      if (pool) pool.recordSuccess(keyInfo.keyIndex);
-      
-      return {
-        content: chatCompletion.choices[0]?.message?.content || '{}',
-        keyInfo
-      };
-    } catch (error) {
-      // Check if it's a rate limit error
-      const isRateLimit = error?.status === 429 || error?.message?.toLowerCase().includes('rate limit');
-      if (pool) pool.recordFailure(keyInfo.keyIndex, isRateLimit);
-      throw error;
-    }
-  }
-
-  // Check if error is a rate limit / token limit error
-  function isRateLimitError(error) {
-    const message = error?.message?.toLowerCase() || '';
-    const status = error?.status || error?.statusCode;
-    return (
-      status === 413 ||
-      status === 429 ||
-      message.includes('rate limit') ||
-      message.includes('token') ||
-      message.includes('too large') ||
-      message.includes('request too large')
-    );
-  }
-
-  // Helper function to call the API with retries across different keys
-  async function callWithKeyRotation(modelName, diffContent, stageLabel) {
-    const pool = getGroqKeyPool();
+  async function callWithKeyRotation(modelName, stageLabel) {
+    const pool = getNimKeyPool();
     const poolSize = pool ? pool.getPoolSize() : 1;
     let lastError;
 
     for (let attempt = 0; attempt < poolSize; attempt++) {
+      let keyInfo;
+      if (jobId) {
+        keyInfo = pool.getKeyForJob(jobId) || pool.assignKeyForJob(jobId);
+      } else {
+        keyInfo = await pool.getNextKey();
+      }
       try {
-        return await withTimeout(
-          callWithModel(modelName, diffContent),
+        const result = await withTimeout(
+          callNimWithKey({ messages, model: modelName, timeoutMs, jobId, keyInfo }),
           timeoutMs,
           `${stageLabel} (Key ${attempt + 1}/${poolSize})`
         );
+        return result;
       } catch (error) {
         lastError = error;
-        // If it's a rate limit error and we have more keys to try, rotate and continue
         if (isRateLimitError(error) && attempt < poolSize - 1) {
           console.warn(`[Analyzer] Rate limit hit on Key ${attempt + 1}/${poolSize} for ${modelName}. Rotating key...`);
-          if (jobId && pool) {
-            pool.rotateKeyForJob(jobId);
-          }
-          // Small delay before retry
+          if (jobId && pool) pool.rotateKeyForJob(jobId);
           await new Promise(resolve => setTimeout(resolve, 200));
           continue;
         }
-        // For other errors or if we've exhausted all keys, throw the error
         throw error;
       }
     }
@@ -275,10 +208,7 @@ async function analyze({
   }
 
   try {
-    // Try with primary model first (across all keys)
-    const result = await callWithKeyRotation(PRIMARY_MODEL, diff, 'Analyzer Agent');
-
-    // Parse and validate the response
+    const result = await callWithKeyRotation(PRIMARY_MODEL, 'Analyzer Agent');
     const parsed = parseAIResponse(result.content);
     const validated = validateAnalysisResult(parsed);
 
@@ -295,16 +225,11 @@ async function analyze({
         keyPoolSize: result.keyInfo.poolSize
       }
     };
-
   } catch (primaryError) {
-    // If it's a rate limit error (meaning ALL keys failed for primary model), try fallback model
     if (isRateLimitError(primaryError)) {
       console.log(`[Analyzer] All keys rate limited on ${PRIMARY_MODEL}, trying fallback model ${FALLBACK_MODEL}...`);
-
       try {
-        // Try with fallback model (also across all keys if needed)
-        const result = await callWithKeyRotation(FALLBACK_MODEL, diff, 'Analyzer Agent (Fallback)');
-
+        const result = await callWithKeyRotation(FALLBACK_MODEL, 'Analyzer Agent (Fallback)');
         const parsed = parseAIResponse(result.content);
         const validated = validateAnalysisResult(parsed);
 
@@ -322,18 +247,14 @@ async function analyze({
             keyPoolSize: result.keyInfo.poolSize
           }
         };
-
       } catch (fallbackError) {
         console.error(`[Analyzer] Fallback model also failed across all keys:`, fallbackError.message);
-        // Continue to error handling below
         throw fallbackError;
       }
     }
 
-    // Handle non-rate-limit errors
     console.error(`[Analyzer] Error analyzing commit ${commitHash?.substring(0, 7)}:`, primaryError.message);
 
-    // Return a minimal analysis for timeout or other errors
     if (primaryError instanceof TimeoutError) {
       return {
         success: false,
@@ -348,15 +269,12 @@ async function analyze({
       };
     }
 
-    // For other errors, try to provide some basic analysis
     return {
       success: false,
       error: primaryError.message,
       errorCode: 'AI_ERROR',
       ...DEFAULT_ANALYSIS,
-      // Use commit message as fallback summary
       technicalSummary: `Commit: ${commitMessage || 'No message'}`,
-      // Try to infer change type from commit message
       changeType: inferChangeTypeFromMessage(commitMessage),
       metadata: {
         analyzedAt: new Date(),
@@ -366,11 +284,6 @@ async function analyze({
   }
 }
 
-/**
- * Analyze a large diff using chunking
- * @param {Object} params - Same as analyze params
- * @returns {Promise<Object>} - Merged analysis result
- */
 async function analyzeChunked({
   commitHash,
   commitMessage,
@@ -382,9 +295,7 @@ async function analyzeChunked({
   onProgress,
   jobId
 }) {
-  const timeoutMs = getTimeoutFromEnv(45000); // Longer timeout for chunks
-
-  // Chunk the diff
+  const timeoutMs = getTimeoutFromEnv(45000);
   const chunks = chunkDiff(diff);
   console.log(`[Analyzer] Processing ${chunks.length} chunks for commit ${commitHash?.substring(0, 7)}${jobId ? ` (job: ${jobId.substring(0, 8)})` : ''}`);
 
@@ -393,87 +304,57 @@ async function analyzeChunked({
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
-    
-    // Check for abortion
+
     if (jobId && await webhookQueue.isJobAborted(jobId)) {
       console.log(`[Analyzer] Job ${jobId.substring(0, 8)} was aborted. Stopping chunked analysis.`);
       throw new Error('JOB_ABORTED');
     }
-    
-    // Send progress update
+
     if (onProgress) {
-      onProgress({
-        stage: 'analyzing',
-        current: i + 1,
-        total: chunks.length,
-        chunkFiles: chunk.files
-      });
+      onProgress({ stage: 'analyzing', current: i + 1, total: chunks.length, chunkFiles: chunk.files });
     }
 
     console.log(`[Analyzer] Processing chunk ${i + 1}/${chunks.length} (${chunk.content.length} chars, files: ${chunk.files?.join(', ') || 'N/A'})`);
 
     try {
       const userPrompt = createChunkedAnalyzerPrompt({
-        commitHash,
-        commitMessage,
-        author,
+        commitHash, commitMessage, author,
         chunkContent: chunk.content,
         chunkIndex: chunk.index,
         totalChunks: chunk.total,
         chunkFiles: chunk.files,
-        filesChanged,
-        projectContext,
-        templateSections
+        filesChanged, projectContext, templateSections
       });
 
-      // Simple wrapper to match the interface of callWithKeyRotation's expectations
-      const chunkCall = async (model) => {
-        const { client, keyInfo } = await getClientWithKey(jobId);
-        const pool = getGroqKeyPool();
-        try {
-          const completion = await client.chat.completions.create({
-            messages: [
-              {
-                role: 'system',
-                content: ANALYZER_SYSTEM_PROMPT + '\n\nThis is a CHUNKED analysis. Focus on the content provided in this chunk. Respond only with valid JSON. No markdown code fences.'
-              },
-              {
-                role: 'user',
-                content: userPrompt
-              }
-            ],
-            model: model,
-            temperature: 0.3,
-            max_tokens: 2048,
-            response_format: { type: 'json_object' }
-          });
-          if (pool) pool.recordSuccess(keyInfo.keyIndex);
-          return completion;
-        } catch (err) {
-          const isRateLimit = err?.status === 429 || err?.message?.toLowerCase().includes('rate limit');
-          if (pool) pool.recordFailure(keyInfo.keyIndex, isRateLimit);
-          throw err;
-        }
-      };
+      const messages = [
+        { role: 'system', content: ANALYZER_SYSTEM_PROMPT + '\n\nThis is a CHUNKED analysis. Focus on the content provided in this chunk. Respond only with valid JSON. No markdown code fences.' },
+        { role: 'user', content: userPrompt }
+      ];
 
-      // Try all keys for primary model
       let chatCompletion;
-      const pool = getGroqKeyPool();
+      const pool = getNimKeyPool();
       const poolSize = pool ? pool.getPoolSize() : 1;
       let lastError;
 
       for (let attempt = 0; attempt < poolSize; attempt++) {
+        let keyInfo;
+        if (jobId) {
+          keyInfo = pool.getKeyForJob(jobId) || pool.assignKeyForJob(jobId);
+        } else {
+          keyInfo = await pool.getNextKey();
+        }
         try {
-          chatCompletion = await withTimeout(
-            chunkCall(PRIMARY_MODEL),
+          const result = await withTimeout(
+            callNimWithKey({ messages, model: PRIMARY_MODEL, timeoutMs, jobId, keyInfo }),
             timeoutMs,
             `Analyzer Agent (Chunk ${i + 1}, Key ${attempt + 1}/${poolSize})`
           );
+          chatCompletion = result;
           break;
         } catch (error) {
           lastError = error;
           if (isRateLimitError(error) && attempt < poolSize - 1) {
-            console.warn(`[Analyzer] Rate limit hit on Chunk ${i+1}, Key ${attempt+1}/${poolSize}. Rotating key...`);
+            console.warn(`[Analyzer] Rate limit hit on Chunk ${i + 1}, Key ${attempt + 1}/${poolSize}. Rotating key...`);
             if (jobId && pool) pool.rotateKeyForJob(jobId);
             await new Promise(resolve => setTimeout(resolve, 200));
             continue;
@@ -482,34 +363,25 @@ async function analyzeChunked({
         }
       }
 
-      const content = chatCompletion.choices[0]?.message?.content || '{}';
+      const content = chatCompletion.content || '{}';
       const parsed = parseAIResponse(content);
       const validated = validateAnalysisResult(parsed);
 
-      analyses.push({
-        success: true,
-        ...validated
-      });
+      analyses.push({ success: true, ...validated });
       successfulChunks++;
 
     } catch (chunkError) {
       console.error(`[Analyzer] Error processing chunk ${i + 1}:`, chunkError.message);
-      // Continue with other chunks even if one fails
-      analyses.push({
-        success: false,
-        error: chunkError.message
-      });
+      analyses.push({ success: false, error: chunkError.message });
     }
 
-    // Small delay between chunks to avoid rate limiting
     if (i < chunks.length - 1) {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
 
-  // Merge all successful analyses
   const successfulAnalyses = analyses.filter(a => a.success);
-  
+
   if (successfulAnalyses.length === 0) {
     console.error('[Analyzer] All chunks failed');
     return {
@@ -527,7 +399,6 @@ async function analyzeChunked({
   }
 
   const mergedResult = mergeChunkAnalyses(successfulAnalyses);
-  
   console.log(`[Analyzer] Merged ${successfulChunks}/${chunks.length} chunk analyses`);
 
   return {
@@ -542,44 +413,18 @@ async function analyzeChunked({
   };
 }
 
-/**
- * Infer change type from commit message (fallback)
- * @param {string} message - Commit message
- * @returns {string} - Inferred change type
- */
 function inferChangeTypeFromMessage(message) {
   if (!message) return 'unknown';
-  
   const msg = message.toLowerCase();
-  
-  if (msg.includes('fix') || msg.includes('bug') || msg.includes('patch')) {
-    return 'bugfix';
-  }
-  if (msg.includes('feat') || msg.includes('add') || msg.includes('new')) {
-    return 'feature';
-  }
-  if (msg.includes('refactor') || msg.includes('clean') || msg.includes('improve')) {
-    return 'refactor';
-  }
-  if (msg.includes('doc') || msg.includes('readme') || msg.includes('comment')) {
-    return 'docs';
-  }
-  if (msg.includes('test') || msg.includes('spec')) {
-    return 'test';
-  }
-  if (msg.includes('config') || msg.includes('env') || msg.includes('setup')) {
-    return 'config';
-  }
-  
+  if (msg.includes('fix') || msg.includes('bug') || msg.includes('patch')) return 'bugfix';
+  if (msg.includes('feat') || msg.includes('add') || msg.includes('new')) return 'feature';
+  if (msg.includes('refactor') || msg.includes('clean') || msg.includes('improve')) return 'refactor';
+  if (msg.includes('doc') || msg.includes('readme') || msg.includes('comment')) return 'docs';
+  if (msg.includes('test') || msg.includes('spec')) return 'test';
+  if (msg.includes('config') || msg.includes('env') || msg.includes('setup')) return 'config';
   return 'unknown';
 }
 
-/**
- * Quick analysis for simple commits (faster, less detailed)
- * @param {string} commitMessage - Commit message
- * @param {Array} filesChanged - List of changed files
- * @returns {Object} - Quick analysis result
- */
 function quickAnalyze(commitMessage, filesChanged) {
   return {
     success: true,

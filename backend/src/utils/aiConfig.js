@@ -1,45 +1,41 @@
 /**
  * AI Service Configuration and Shared Key Pool
+ * Unified NVIDIA NIM API client
  */
 
 const KeyPoolManager = require('./keyPoolManager');
 
-// Valid Groq Model IDs (as of Jan 2026)
-// Using Llama 3.3 70B for high-quality analysis and writing
-// Using Llama 3.1 8B as a fast fallback
+// NVIDIA NIM model IDs
 const MODELS = {
-  // Using Llama 3.3 70B as primary - better free tier limits (30 RPM, higher TPM)
-  // The specialized models (qwen, gpt-oss) have stricter limits (60 RPM but only 1K RPD, 6K TPM)
   ANALYZER: {
-    PRIMARY: 'openai/gpt-oss-120b',
-    FALLBACK: 'llama-3.1-8b-instant'
+    PRIMARY: 'moonshotai/kimi-k2.6',
+    FALLBACK: 'meta/llama-3.1-8b-instruct'
   },
   WRITER: {
-    PRIMARY: 'qwen/qwen3-32b',
-    FALLBACK: 'llama-3.1-8b-instant'
+    PRIMARY: 'moonshotai/kimi-k2.6',
+    FALLBACK: 'meta/llama-3.1-8b-instruct'
   }
 };
 
 let sharedKeyPool = null;
 
 /**
- * Get or initialize the shared key pool for Groq
+ * Get or initialize the shared key pool for NVIDIA NIM
  */
-function getGroqKeyPool() {
+function getNimKeyPool() {
   if (sharedKeyPool) return sharedKeyPool;
-  
-  const keysString = process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY;
-  
+
+  const keysString = process.env.NVIDIA_API_KEYS || process.env.NVIDIA_API_KEY;
+
   if (!keysString) {
-    // We'll throw later in the agents to allow app startup even without keys
     return null;
   }
-  
-  sharedKeyPool = new KeyPoolManager(keysString, 'Groq-Shared-Pool');
+
+  sharedKeyPool = new KeyPoolManager(keysString, 'NVIDIA-NIM-Pool');
   return sharedKeyPool;
 }
 
 module.exports = {
   MODELS,
-  getGroqKeyPool
+  getNimKeyPool
 };

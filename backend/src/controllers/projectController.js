@@ -16,7 +16,7 @@ const { autoLogger } = require('../services/autoLogger');
 const { analyzeRepositoryForInitialReport } = require('../services/repositoryAnalyzerService');
 const { webhookQueue } = require('../services/queue');
 const { notifyUserOnGitHub } = require('../services/notificationService');
-const { getGroqKeyPool } = require('../utils/aiConfig');
+const { getNimKeyPool } = require('../utils/aiConfig');
 
 // Fallback templates for when database is empty
 const fallbackTemplates = [
@@ -948,7 +948,7 @@ async function processInitialReportJob(job) {
   }
   
   // Release key assignment
-  const pool = getGroqKeyPool();
+  const pool = getNimKeyPool();
   if (pool && job.id) {
     pool.releaseJobKey(job.id);
   }
